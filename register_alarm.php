@@ -45,7 +45,7 @@
 		if (isset($_REQUEST['debug'])) debug($row);
 	}
 
-    $startdate = time()-86400*3;
+    $startdate = time()-86400*30;
     $yy = date("Y");
     $query = 
     "SELECT CONCAT(FROM_UNIXTIME(plc_time),SUBSTR(MOD(plc_time,1),2)) AS t, CONCAT(FROM_UNIXTIME(db_time),SUBSTR(MOD(db_time,1),2)) AS db_time, 'L' AS machine, position, present, name, time_id FROM linac_db50_$yy, enabled_user, linac_time_$yy WHERE position<16 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=linac_time_$yy.id"

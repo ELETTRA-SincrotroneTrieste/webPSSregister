@@ -95,12 +95,12 @@
 		if (document.getElementById('badge').value.length==0) {alert("ERRORE!\nBadge mancante"); return;}
 		if (document.getElementById('badge').value!='personal' && document.getElementById('badge_id').value.length==0) {alert("ERRORE!\nNumero di badge ospite o ronda mancante"); return;}
 		if (document.getElementById('badge').value=='personal' && typeof(dosimeteredUser) !== 'undefined' && dosimeteredUser.indexOf(document.getElementById('name').value)==-1) {alert("ATTENZIONE!\nUsername: "+document.getElementById('name').value+" non risulta essere dotato di badge personale");}
-		if (badge[document.getElementById('badge_id').value]) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del badge ospite"); if (r != true) return;}
+		if (badge[document.getElementById('badge_id').value]) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del badge ospite\nin quanto risulta gia' assegnato"); if (r != true) return;}
 		if (document.getElementById('dosimeter').value.length==0) {alert("ERRORE!\nDosimetro mancante"); return;}
 		if (document.getElementById('dosimeter').value!='personal' && document.getElementById('dosimeter_id').value.length==0) {alert("ERRORE!\nNumero di dosimetro ospite mancante"); return;}
 		if (document.getElementById('dosimeter').value!='personal' && document.getElementById('dosimeter_value').value.length==0) {alert("ERRORE!\nLettura dosimetro ospite mancante"); return;}
 		if (document.getElementById('dosimeter').value=='personal' && typeof(dosimeteredUser) !== 'undefined' && dosimeteredUser.indexOf(document.getElementById('name').value)==-1) {alert("ATTENZIONE!\nUsername: "+document.getElementById('name').value+" non risulta essere dotato di dosimetro personale");}
-		if (dosimeter[document.getElementById('dosimeter_id').value] && dosimeter[document.getElementById('dosimeter_id').value][2]==-1) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del dosimetro ospite"); if (r != true) return;}
+		if (dosimeter[document.getElementById('dosimeter_id').value] && dosimeter[document.getElementById('dosimeter_id').value][2]==-1) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del dosimetro ospite\nin quanto risulta gia' assegnato"); if (r != true) return;}
 		var dosimeter_diff = dosimeter[document.getElementById('dosimeter_id').value]? document.getElementById('dosimeter_value').value - dosimeter[document.getElementById('dosimeter_id').value][1]: -1;
 		if (document.getElementById('dosimeter').value!='personal' && (dosimeter_diff<0 || dosimeter_diff>1)) {r = confirm("ATTENZIONE\nLettura dosimetro ospite a rischio di errore.\nSi prega di ricontrollare il NUMERO e la LETTURA del dosimetro ospite e\npremere OK solo dopo aver verificato la correttezza di entrambi i valori."); if (r != true) return;}
 		var myaddress = loginService+'?pss_username='+document.getElementById('name').value+'&pss_token=-1';

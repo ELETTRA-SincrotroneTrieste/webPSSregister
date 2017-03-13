@@ -429,7 +429,7 @@
 			$err_msg .= "{$row['name']} in macchina da oltre 24 ore: {$row['enter_time']}\n";
 		}
 		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') {
-			$startdate = time()-86400*7;
+			$startdate = time()-86400*30;
 			$yy = date("Y");
 			if ($machine=='fermi') {
 				$data = $sql->sql_select("CONCAT(FROM_UNIXTIME(plc_time),SUBSTR(MOD(plc_time,1),2)) AS t, CONCAT(FROM_UNIXTIME(db_time),SUBSTR(MOD(db_time,1),2)) AS db_time, 'L' AS machine, position, present, name, time_id", "linac_db50_$yy, enabled_user, linac_time_$yy", "position<16 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=linac_time_$yy.id"
@@ -437,7 +437,11 @@
 					"SELECT CONCAT(FROM_UNIXTIME(plc_time),SUBSTR(MOD(plc_time,1),2)) AS t, CONCAT(FROM_UNIXTIME(db_time),SUBSTR(MOD(db_time,1),2)) AS db_time, 'U' AS machine, position, present, name, time_id FROM undulator_db50_$yy, enabled_user, undulator_time_$yy WHERE position<16 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=undulator_time_$yy.id ORDER BY time_id");
 			}
 			else {
-				$data = $sql->sql_select("FROM_UNIXTIME(plc_time) AS t, FROM_UNIXTIME(db_time) AS db_time, CONCAT(position) AS position, present, name, time_id", "sr_db49_$yy, enabled_user, sr_time_$yy", "position<64 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=sr_time_$yy.id ORDER BY time_id");
+				$sql2 = new SqlInterface($dbtype);
+				$db = $sql2->sql_connect(HOST2, USERNAME2, PASSWORD2, DB);
+				if ($dbtype!="pg") {$sql->sql_select_db(DB, $db);}
+				$data = $sql2->sql_select("FROM_UNIXTIME(plc_time) AS t, FROM_UNIXTIME(db_time) AS db_time, CONCAT(position) AS position, present, name, time_id", "sr_db49_$yy, enabled_user, sr_time_$yy", "position<64 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=sr_time_$yy.id ORDER BY time_id");
+				if (isset($_REQUEST['debug'])) debug($data, 'data');
 			}
 			if (!empty($data)) foreach ($data as $row) {
 				if ($row['present']=='Y') {
@@ -447,7 +451,7 @@
 						$query = "SELECT * FROM access_$machine WHERE name='$name' AND enter_time<'{$row['db_time']}' AND (ISNULL(exit_time) OR exit_time>'{$row['db_time']}')";
 					}
 					else {
-						$name = strtr($row['name'],array('ronda.'=>'search','osp.'=>'host','ospite'=>'host','_'=>''));
+						$name = strtr($row['name'],array('ronda.'=>'search','osp.'=>'host','osp'=>'host','ospite'=>'host','_'=>''));
 						$query = "SELECT * FROM access_$machine WHERE CONCAT(badge_type,'$machine',badge_number)='$name' AND token>0 AND enter_time<'{$row['db_time']}' AND (ISNULL(exit_time) OR exit_time>'{$row['db_time']}')";
 					}
 					if (isset($_REQUEST['debug'])) debug($query);
@@ -726,14 +730,15 @@
 		$logquery = "INSERT INTO access_{$machine}_log (access_{$machine}_id,action_time,from_ip, query) VALUES ($id,NOW(),'{$_SERVER["REMOTE_ADDR"]}',".quote_smart(strtr($query,array("'"=>'&#39;','"'=>'&quot;'))).")";
 		$res = $sql->sql_query($logquery);
 		// if (!$res) {printf("$logquery;<br>\nErrormessage: %s\n", $sql->sql_error());exit();}
-		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') $res = file("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['start'])."&name={$_REQUEST['name']}&place={$param['place']}&note=".urlencode($_REQUEST['note'])."&exit=false");
-		else die("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['start'])."&name={$_REQUEST['name']}&place={$param['place']}&note=".urlencode($_REQUEST['note'])."&exit=false");
+		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') $res = file("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['start'])."&name={$_REQUEST['name']}&place=".trim($param['place'],"'")."&note=".urlencode($_REQUEST['note'])."&exit=false");
+		else die("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['start'])."&name={$_REQUEST['name']}&place=".trim($param['place'],"'")."&exit=false");
 		header("location: ./register.php?machine=$machine");
 		exit();
 	}
 	if (isset($_REQUEST['exit'])) {
 		validate_request();
-		$query = "UPDATE access_$machine SET exit_time=".($dbtype=="pg"? 'TIMESTAMP ':'')."'".trim(quote_smart($_REQUEST['stop']),"'").":00',dosimeter_exitvalue=".quote_smart($_REQUEST["dosimeter_exitvalue"])." WHERE token=".quote_smart($_REQUEST['token']);
+		$exitvalue = isset($_REQUEST["dosimeter_exitvalue"])? quote_smart($_REQUEST["dosimeter_exitvalue"]): 'NULL';
+		$query = "UPDATE access_$machine SET exit_time=".($dbtype=="pg"? 'TIMESTAMP ':'')."'".trim(quote_smart($_REQUEST['stop']),"'").":00',dosimeter_exitvalue=$exitvalue WHERE token=".quote_smart($_REQUEST['token']);
 		$sql->sql_query($query);
 		if ($sql->sql_error()) {
 			debug($_REQUEST);
@@ -746,7 +751,8 @@
 		// if (!$res) {printf("$logquery;<br>\nErrormessage: %s\n", $sql->sql_error());exit();}
 		$data = $sql->sql_select("name,place", "access_$machine", "token=".quote_smart($_REQUEST['token']));
 		$row = $data[0];
-		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') $res = file("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['stop'])."&name={$row['name']}&place={$row['place']}&note=".urlencode($_REQUEST['note'])."&exit=true");
+		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') $res = file("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['stop'])."&name={$row['name']}&place={$row['place']}&exit=true");
+		// else die("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['stop'])."&name={$row['name']}&place={$row['place']}&exit=true");
 		header("location: ./register.php?machine=$machine");
 		exit();
 	}
