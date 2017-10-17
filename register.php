@@ -12,6 +12,12 @@
 	require_once("./register_conf.php");
 	$place = array('psa', 'bo', 'sa', 'ring', 'linac', 'uh', 'linacuh', 'kgzc');
 
+
+	if (strpos($_SERVER['HTTP_HOST'], 'trieste.it')!==false) {
+		header('Location: http://'.strtr($_SERVER['HTTP_HOST'], array('.trieste.it'=>'.eu')).$_SERVER['REQUEST_URI']);
+		// echo ('Location: '.strtr($_SERVER['HTTP_HOST'], array('.trieste.it'=>'.eu')).$_SERVER['REQUEST_URI']);
+	}
+
 	// ----------------------------------------------------------------
 	// Quote variable to make safe
 	function quote_smart($value, $quote="'", $null='NULL') {
@@ -24,7 +30,7 @@
 		if (get_magic_quotes_gpc()) {
 			$value = stripslashes($value);
 		}
-		strtr($value, '“”`', '""'."'");
+		strtr($value, 'â€œâ€`', '""'."'");
 		if ($dbtype=="pg") $quote="";
 		// Quote if not integer
 		// if (!is_numeric($value)) {
@@ -168,12 +174,12 @@
 	function detect_dosimeter() {
 		global $sql, $machine;
 		$dosimeter = array();
-		$data = $sql->sql_select("dosimeter_number, dosimeter_value, dosimeter_exitvalue, COALESCE(dosimeter_exitvalue, -1) AS exit", "access_$machine", "token>0 AND dosimeter_number>0 ORDER BY dosimeter_number, enter_time DESC");
+		$data = $sql->sql_select("dosimeter_number, dosimeter_value, dosimeter_exitvalue, COALESCE(dosimeter_exitvalue, -1) AS myexit", "access_$machine", "token>0 AND dosimeter_number>0 ORDER BY dosimeter_number, enter_time DESC");
 		$dosimeter_number = 0;
 		if (!empty($data)) foreach ($data as $row) {
 			if ($dosimeter_number == $row['dosimeter_number']) continue;
 			$exit = $row['dosimeter_exitvalue']>0? $row['dosimeter_exitvalue']: $row['dosimeter_value'];
-			$dosimeter[] = "{$row['dosimeter_number']}: [{$row['dosimeter_value']}, $exit, {$row['exit']}]";
+			$dosimeter[] = "{$row['dosimeter_number']}: [{$row['dosimeter_value']}, $exit, {$row['myexit']}]";
 			$dosimeter_number = $row['dosimeter_number'];
 		}
 		return implode(",\n", $dosimeter);
@@ -323,7 +329,8 @@
 		$replace['<!--dosimeter_value-->'] = $d['dosimeter_value']>0? $d['dosimeter_value']: '';
 		$replace['<!--dosimeter_exitvalue-->'] = $d['dosimeter_exitvalue']>0? $d['dosimeter_exitvalue']: '';
 		$replace['<!--token-->'] = $d['token']=='-1'? 'cancellato': '';
-		$replace["<input type='submit' name='insert' value='salva'"] = "<input type='submit' name='update_save' value='modifica' onClick=\"validate_backoffice('$machine');return false;\">&nbsp;<input type='submit' name='delete' value='elimina'>&nbsp;<input type='submit' name='exit' value='esci'><input type='hidden' name='id' value='{$d['id']}'";
+		// $replace["<input type='submit' name='insert' value='salva'"] = "<input type='submit' name='update_save' value='modifica' onClick=\"validate_backoffice('$machine');return false;\">&nbsp;<input type='submit' name='delete' value='elimina'>&nbsp;<input type='submit' name='exit' value='esci'><input type='hidden' name='id' value='{$d['id']}'";
+		$replace["<input type='submit' name='insert' value='salva'"] = "<input type='submit' name='update_save' value='modifica' onClick=\"validate_backoffice('$machine');\">&nbsp;<input type='submit' name='delete' value='elimina'>&nbsp;<input type='submit' name='exit' value='esci'><input type='hidden' name='id' value='{$d['id']}'";
 		echo strtr($template[0], $replace)."{$template[2]}<br><br><br><br><br>";
 		exit();
 	}
@@ -384,10 +391,10 @@
 				update_save_backoffice();
 			}
 			$form = "<form class='form-inline' enctype='multipart/form-data' action='?backoffice&load_csv' method='post'><table><tr><td>dati storici&nbsp;&nbsp;</td><td><input id='f' type='file' name='userfile' length='40'></td><td><input type='submit' name='download' value='Carica file CSV'></td></tr></table></form><br>";
-			$err_msg = show_anomalies();
+			$err_msg = show_anomalies(date('z')+1);
 			$template = explode('<!--item-->', file_get_contents("register_backoffice_$machine.html"));
-			$data = $sql->sql_select("*", "access_$machine", "1=1 ORDER BY enter_time DESC LIMIT 50");
-			if (!$data) {sql_debug("*", "access_$machine", "1=1 ORDER BY enter_time DESC LIMIT 50"); echo ";<br>\n".$sql->sql_error(); exit();}
+			$data = $sql->sql_select("*", "access_$machine", "1=1 ORDER BY enter_time DESC LIMIT 500");
+			if (!$data) {sql_debug("*", "access_$machine", "1=1 ORDER BY enter_time DESC LIMIT 500"); echo ";<br>\n".$sql->sql_error(); exit();}
 			$items = '';
 			foreach ($data as $row) {
 				foreach ($row as $k=>$v) $replace["<!--$k-->"] = $v;
@@ -418,34 +425,69 @@
 		die("ATTENZIONE<br>\nservizio non disponibile<br>\ne' OBBLIGATORIO usare il registro cartaceo");
 	}
 
+
 	// ----------------------------------------------------------------
 	// show_anomalies
-	function show_anomalies() {
+	function show_anomalies($days=30) {
 		global $sql, $machine, $user, $dbtype;
+		$t0 = time();
+		if ($machine=='elettra') {
+			$sql2 = new SqlInterface($dbtype);
+			$db2 = $sql2->sql_connect(HOST2, USERNAME2, PASSWORD2, DB);
+			if ($dbtype!="pg") {$sql2->sql_select_db(DB, $db2);}
+			$sql3 = new SqlInterface($dbtype);
+			$db3 = $sql3->sql_connect(HOST3, USERNAME3, PASSWORD3, DB3);
+			if ($dbtype!="pg") {$sql3->sql_select_db(DB3, $db3);}
+		}
+		if (isset($_REQUEST['debug3'])) debug("show_anomalies($days), machine: $machine");
 		$err_msg = '';
+		$nl = '%0D%0A';
 		$cond = ($dbtype=="pg")? "exit_time IS NULL AND EXTRACT(EPOCH FROM current_timestamp-enter_time)>86400": "ISNULL(exit_time) AND TIME_TO_SEC(TIMEDIFF(NOW(),enter_time))>86400";
 		$data = $sql->sql_select("*", "access_$machine", "token>0 AND $cond");
+		$yy = date("Y");
+		if (isset($_REQUEST['debug3'])) debug($data, "data");
+		$err_msg = '';
 		if (!empty($data)) foreach ($data as $row) {
-			$err_msg .= "{$row['name']} in macchina da oltre 24 ore: {$row['enter_time']}\n";
+			$startdate = $row['enter_time'];
+			echo "<!--\n";
+			if ($machine=='fermi') {
+				$doordata = $sql->sql_select(
+					"CONCAT(FROM_UNIXTIME(plc_time),SUBSTR(MOD(plc_time,1),2)) AS t, CONCAT(FROM_UNIXTIME(db_time),SUBSTR(MOD(db_time,1),2)) AS db_time, 'L' AS machine, position, present, name, time_id", 
+					"linac_db50_$yy, enabled_user, linac_time_$yy", "position<16 AND plc_time>=UNIX_TIMESTAMP('$startdate') AND enabled_user.id=enabled_user_id AND time_id=linac_time_$yy.id"
+					." UNION ". 
+					"SELECT CONCAT(FROM_UNIXTIME(plc_time),SUBSTR(MOD(plc_time,1),2)) AS t, CONCAT(FROM_UNIXTIME(db_time),SUBSTR(MOD(db_time,1),2)) AS db_time, 'U' AS machine, position, present, name, time_id FROM undulator_db50_$yy,".
+					"enabled_user, undulator_time_$yy WHERE position<16 AND plc_time>=UNIX_TIMESTAMP('$startdate') AND enabled_user.id=enabled_user_id AND time_id=undulator_time_$yy.id AND name=\"{$user[$row['name']]}\" ORDER BY time_id DESC LIMIT 1");
+			}
+			else { // $machine=='elettra'
+				$sql2 = new SqlInterface($dbtype);
+				$db2 = $sql2->sql_connect(HOST2, USERNAME2, PASSWORD2, DB);
+				if ($dbtype!="pg") {$sql2->sql_select_db(DB, $db2);}
+				$doordata = $sql2->sql_select("FROM_UNIXTIME(plc_time) AS t, FROM_UNIXTIME(db_time) AS db_time, CONCAT(position) AS position, present, name, time_id", "sr_db49_$yy, enabled_user, sr_time_$yy", 
+											  "position<64 AND plc_time>=UNIX_TIMESTAMP('$startdate')-4000 AND enabled_user.id=enabled_user_id AND time_id=sr_time_$yy.id AND name=\"{$user[$row['name']]}\" ORDER BY time_id DESC LIMIT 1", 1);
+				if (isset($_REQUEST['debug'])) debug($doordata, 'doordata');
+			}
+			echo "-->\n";
+			$msg_body = "Attenzione!{$nl}Risulta incompleta la registrazione nel registro elettronico dell'accesso dalle {$row['enter_time']} alle {$doordata[0]['db_time']}.{$nl}Si prega di recarsi in sala controllo e completare la registrazione indicando un orario che comprenda quello segnalato con qualche minuto di margine.{$nl}{$nl}Saluti.{$nl}Servizio Radioprotezione";
+			$err_msg .= (isset($_REQUEST['backoffice']))? "<a href=\"mailto:{$row['name']}@elettra.eu?subject=Anomalia registrazione accesso&body=$msg_body\">{$row['name']}</a>": $row['name'];
+			$err_msg .= " in macchina da oltre 24 ore, entrata dichiarata alle {$row['enter_time']}, uscita rilevata alle {$doordata[0]['db_time']}\n";
 		}
 		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') {
-			$startdate = time()-86400*30;
-			$yy = date("Y");
+			$startdate = time()-86400*$days;
 			if ($machine=='fermi') {
-				$data = $sql->sql_select("CONCAT(FROM_UNIXTIME(plc_time),SUBSTR(MOD(plc_time,1),2)) AS t, CONCAT(FROM_UNIXTIME(db_time),SUBSTR(MOD(db_time,1),2)) AS db_time, 'L' AS machine, position, present, name, time_id", "linac_db50_$yy, enabled_user, linac_time_$yy", "position<16 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=linac_time_$yy.id"
+				$doordata = $sql->sql_select("CONCAT(FROM_UNIXTIME(plc_time),SUBSTR(MOD(plc_time,1),2)) AS t, CONCAT(FROM_UNIXTIME(db_time),SUBSTR(MOD(db_time,1),2)) AS db_time, 'L' AS machine, position, present, name, time_id", "linac_db50_$yy, enabled_user, linac_time_$yy", "position<16 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=linac_time_$yy.id"
 					." UNION ". 
-					"SELECT CONCAT(FROM_UNIXTIME(plc_time),SUBSTR(MOD(plc_time,1),2)) AS t, CONCAT(FROM_UNIXTIME(db_time),SUBSTR(MOD(db_time,1),2)) AS db_time, 'U' AS machine, position, present, name, time_id FROM undulator_db50_$yy, enabled_user, undulator_time_$yy WHERE position<16 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=undulator_time_$yy.id ORDER BY time_id");
+					"SELECT CONCAT(FROM_UNIXTIME(plc_time),SUBSTR(MOD(plc_time,1),2)) AS t, CONCAT(FROM_UNIXTIME(db_time),SUBSTR(MOD(db_time,1),2)) AS db_time, 'U' AS machine, position, present, name, time_id FROM undulator_db50_$yy, enabled_user, undulator_time_$yy 
+					 WHERE position<16 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=undulator_time_$yy.id ORDER BY time_id");
 			}
 			else {
-				$sql2 = new SqlInterface($dbtype);
-				$db = $sql2->sql_connect(HOST2, USERNAME2, PASSWORD2, DB);
-				if ($dbtype!="pg") {$sql->sql_select_db(DB, $db);}
-				$data = $sql2->sql_select("FROM_UNIXTIME(plc_time) AS t, FROM_UNIXTIME(db_time) AS db_time, CONCAT(position) AS position, present, name, time_id", "sr_db49_$yy, enabled_user, sr_time_$yy", "position<64 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=sr_time_$yy.id ORDER BY time_id");
-				if (isset($_REQUEST['debug'])) debug($data, 'data');
+				$doordata = $sql2->sql_select("FROM_UNIXTIME(plc_time) AS t, FROM_UNIXTIME(db_time) AS db_time, CONCAT(position) AS position, present, name, time_id", "sr_db49_$yy, enabled_user, sr_time_$yy", "position<64 AND plc_time>$startdate AND enabled_user.id=enabled_user_id AND time_id=sr_time_$yy.id ORDER BY time_id");
+				if (isset($_REQUEST['debug'])) debug($doordata, 'data');
 			}
-			if (!empty($data)) foreach ($data as $row) {
+			$present = array();
+			if (!empty($doordata)) foreach ($doordata as $row) {
 				if ($row['present']=='Y') {
-					if (isset($_REQUEST['debug'])) debug($row);
+					$in_machine = "in service area";
+					if (isset($_REQUEST['debug2'])) debug($row, 'row');
 					$name = array_search(trim($row['name']), $user);
 					if ($name) {
 						$query = "SELECT * FROM access_$machine WHERE name='$name' AND enter_time<'{$row['db_time']}' AND (ISNULL(exit_time) OR exit_time>'{$row['db_time']}')";
@@ -454,17 +496,40 @@
 						$name = strtr($row['name'],array('ronda.'=>'search','osp.'=>'host','osp'=>'host','ospite'=>'host','_'=>''));
 						$query = "SELECT * FROM access_$machine WHERE CONCAT(badge_type,'$machine',badge_number)='$name' AND token>0 AND enter_time<'{$row['db_time']}' AND (ISNULL(exit_time) OR exit_time>'{$row['db_time']}')";
 					}
-					if (isset($_REQUEST['debug'])) debug($query);
+					if (isset($_REQUEST['debug2'])) debug($query, 'query');
 					$res2 = $sql->sql_query($query);
 					$row2 = $sql->sql_fetch_array($res2);
-					if (isset($_REQUEST['debug'])) debug($row2);
+					if (isset($_REQUEST['debug2'])) debug($row2);
 					$color = (($color=='red') or empty($row2))? 'red': 'green';
-					if (empty($row2)) $err_msg .= "{$row['name']} entrato in macchina alle {$row['db_time']} ma assente dal registro. \n";
+					if ($machine=='elettra') {
+						$doordata2 = $sql2->sql_select("FROM_UNIXTIME(plc_time) AS t, FROM_UNIXTIME(db_time) AS db_time, CONCAT(position) AS position, present, name, time_id", "sr_db50_$yy, enabled_user, sr_time_$yy", 
+													  "position<64 AND plc_time>=UNIX_TIMESTAMP('$startdate')-4000 AND enabled_user.id=enabled_user_id AND time_id=sr_time_$yy.id AND name=\"{$row['name']}\" ORDER BY time_id DESC LIMIT 1");
+						if (isset($_REQUEST['debug3'])) debug($doordata2, 'doordata2');
+						if (isset($doordata2[0])) $in_machine = "in storage ring";
+						$doordata3 = $sql3->sql_select("FROM_UNIXTIME(plc_time) AS t, FROM_UNIXTIME(db_time) AS db_time, CONCAT(position) AS position, present, name, time_id", "booster_db50_$yy, enabled_user, booster_time_$yy", 
+													  "position<64 AND plc_time>=UNIX_TIMESTAMP('$startdate')-4000 AND enabled_user.id=enabled_user_id AND time_id=booster_time_$yy.id AND name=\"{$row['name']}\" ORDER BY time_id DESC LIMIT 1");
+						if (isset($_REQUEST['debug3'])) debug($doordata3, 'doordata3');
+						if (isset($doordata3[0])) $in_machine = "in booster";
+					}
+					else {
+						$in_machine = $row['machine']=='L'? "in linac": "in sala ondulatori";
+					}
+					if (empty($row2)) {
+						$present[$row['name']] = true;
+						$msg_body = "Attenzione!{$nl}Risulta mancante la registrazione nel registro elettronico dell'accesso $in_machine dalle {$row['db_time']} alle <!--{$row['name']}-->.{$nl}Si prega di recarsi in sala controllo ed effettuare la registrazione indicando un orario che comprenda quello segnalato con qualche minuto di margine.{$nl}{$nl}Saluti.{$nl}Servizio Radioprotezione";
+						$err_msg = (isset($_REQUEST['backoffice'])? "<a href=\"mailto:{$name}@elettra.eu?subject=Anomalia registrazione accesso&body=$msg_body\">{$row['name']}</a>": $row['name'])." $in_machine dalle {$row['db_time']} alle <!--{$row['name']}--> ma risulta assente dal registro. \n".$err_msg;
+					}
+				}
+				else if (isset($present[$row['name']]) and $present[$row['name']]) {
+					$present[$row['name']] = false; 
+					$err_msg = strtr($err_msg, array("<!--{$row['name']}-->" => $row['db_time']));
 				}
 			}
 		}
-		if (strlen($err_msg)) $err_msg = "<b>Lista anomalie</b>\n<pre>$err_msg</pre>\n";
-		return $err_msg;
+		if (strlen($err_msg)) $err_msg = "<b>Lista anomalie</b>".(isset($_REQUEST['backoffice'])?"\n<pre>$err_msg</pre>\n": "<br>\n<textarea rows='3' cols='140'>$err_msg</textarea>\n");
+		$t = time() - $t0;
+		echo "\n<!--\n show_anomalies() t: $t\n-->\n";
+		return strtr($err_msg, array("alle  ma risulta"=>"; ma risulta"));
 	}
 
 	// ----------------------------------------------------------------
@@ -795,10 +860,10 @@
 	}
 	$keys = array('<!--start-->', '<!--name-->', '<!--place-->', '<!--note-->', '<!--badge-->', '<!--badge_id-->', '<!--dosimeter-->', '<!--dosimeter_id-->', '<!--dosimeter_value-->', '<!--stop-->');
 	$items = '';
-	$data = $sql->sql_select("*", "access_$machine", "token>=0 AND NOT $is_null_exit_time ORDER BY enter_time DESC LIMIT 50");
-	// $stmt = $sql->sql_prepare("SELECT * FROM access_$machine WHERE token>=? AND NOT $is_null_exit_time ORDER BY enter_time DESC LIMIT 50");
+	$data = $sql->sql_select("*", "access_$machine", "token>=0 AND NOT $is_null_exit_time ORDER BY enter_time DESC LIMIT 500");
+	// $stmt = $sql->sql_prepare("SELECT * FROM access_$machine WHERE token>=? AND NOT $is_null_exit_time ORDER BY enter_time DESC LIMIT 500");
 	// $params = array($stmt, "i", 0);
-	// $stmt = $sql->sql_prepare("SELECT * FROM access_$machine WHERE token>=$1 AND NOT $is_null_exit_time ORDER BY enter_time DESC LIMIT 50", "q1");
+	// $stmt = $sql->sql_prepare("SELECT * FROM access_$machine WHERE token>=$1 AND NOT $is_null_exit_time ORDER BY enter_time DESC LIMIT 500", "q1");
 	// $params = array(0);
 	// $data = $sql->sql_execute($params, "q1");
 	if (!empty($data)) foreach ($data as $row) {
