@@ -16,6 +16,20 @@
 
 	var popupWindow = null;
 
+	function changeUser(id, value) {
+		const myid = ((typeof id !== "undefined") && (id!==''))? '_'+id: '';
+		const name = (typeof value !== "undefined")? value: document.getElementById('name'+myid).value;
+		// console.log('myid', myid); console.log('name', name);
+		if (name.indexOf('.')===-1 && name!='') {
+			if (typeof myid !== "undefined" && document.getElementById('operatorList'+myid)) document.getElementById('operatorList'+myid).style.display = 'block';
+			if (typeof hostList[name] !== "undefined") document.getElementById('name'+myid).value = hostList[name];
+		}
+		else {
+			if (typeof myid !== "undefined" && document.getElementById('operatorList'+myid)) document.getElementById('operatorList'+myid).style.display = 'none';
+		}
+		changeElement('name'+myid, '#save');
+	}
+
 	function getQueryParams(qs) {
 		qs = qs.split("+").join(" ");
 		var params = {},
@@ -118,14 +132,13 @@ console.log('name');
 		if (document.getElementById('name').value.length==0) {alert("ERRORE!\nUsername mancante"); return;}
 
 		if (typeof(userList) !== 'undefined' && userList.indexOf(document.getElementById('name').value)==-1) {alert("ERRORE!\nUsername non valido"); return;}
-		if (typeof(entered) !== 'undefined' && entered.indexOf(document.getElementById('name').value) != -1) {alert("ERRORE!\nOperatore gia' registrato all'interno di una zona controllata"); return;}
+		if (typeof(entered) !== 'undefined' && entered.indexOf(document.getElementById('name').value) != -1) {alert("ERRORE!\nPersona gia' registrata all'interno di una zona controllata"); return;}
 		if (machine=='elettra') {
 			if (!(document.getElementById('place_psa').checked || document.getElementById('place_bo').checked || document.getElementById('place_ring').checked || document.getElementById('place_sa').checked)) {alert("ERRORE!\nLuogo di intervento mancante"); return;}
 		}
 		if (machine=='fermi') {
 			if (!(document.getElementById('place_linac').checked || document.getElementById('place_uh').checked || document.getElementById('place_kgzc').checked)) {alert("ERRORE!\nLuogo di intervento mancante"); return;}
 		}
-console.log('badge');
 		if (document.getElementById('badge').value.length==0) {alert("ERRORE!\nBadge mancante"); return;}
 		if (document.getElementById('badge').value!='personal' && document.getElementById('badge_id').value.length==0) {alert("ERRORE!\nNumero di badge ospite o ronda mancante"); return;}
 		if (document.getElementById('badge').value=='personal' && typeof(dosimeteredUser) !== 'undefined' && dosimeteredUser.indexOf(document.getElementById('name').value)==-1) {alert("ATTENZIONE!\nUsername: "+document.getElementById('name').value+" non risulta essere dotato di badge personale");}
@@ -134,10 +147,12 @@ console.log('badge');
 		if (document.getElementById('dosimeter').value!='personal' && document.getElementById('dosimeter_id').value.length==0) {alert("ERRORE!\nNumero di dosimetro ospite mancante"); return;}
 		if (document.getElementById('dosimeter').value!='personal' && document.getElementById('dosimeter_value').value.length==0) {alert("ERRORE!\nLettura dosimetro ospite mancante"); return;}
 		if (document.getElementById('dosimeter').value=='personal' && typeof(dosimeteredUser) !== 'undefined' && dosimeteredUser.indexOf(document.getElementById('name').value)==-1) {alert("ATTENZIONE!\nUsername: "+document.getElementById('name').value+" non risulta essere dotato di dosimetro personale");}
-		if (dosimeter[document.getElementById('dosimeter_id').value] && dosimeter[document.getElementById('dosimeter_id').value][2]==-1) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del dosimetro ospite\nin quanto risulta gia' assegnato"); if (r != true) return;}
+console.log('dosimeter',dosimeter); // TODO check if this condition works effectively
+		if (dosimeter[document.getElementById('dosimeter_id').value] && dosimeter[document.getElementById('dosimeter_id').value][2]==-1) {dosconf = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del dosimetro ospite\nin quanto risulta gia' assegnato"); if (dosconf != true) return;}
 		var dosimeter_diff = dosimeter[document.getElementById('dosimeter_id').value]? document.getElementById('dosimeter_value').value - dosimeter[document.getElementById('dosimeter_id').value][1]: -1;
 		if (document.getElementById('dosimeter').value!='personal' && (dosimeter_diff<0 || dosimeter_diff>1)) {r = confirm("ATTENZIONE\nLettura dosimetro ospite a rischio di errore.\nSi prega di ricontrollare il NUMERO e la LETTURA del dosimetro ospite e\npremere OK solo dopo aver verificato la correttezza di entrambi i valori."); if (r != true) return;}
-		var myaddress = loginService+'?pss_username='+document.getElementById('name').value+'&pss_token=-1';
+		const name = document.getElementById('operator').value.length>0? document.getElementById('operator').value: document.getElementById('name').value;
+		var myaddress = loginService+'?pss_username='+name+'&pss_token=-1';
 		if (!document.getElementById('confirm')) return;
 console.log('ok');
 		document.getElementById('confirm').value = 'ok';
@@ -213,6 +228,7 @@ console.log('confirmed');
 
 	function open_validation(username, token) {
 		if (document.getElementById('stop_'+token).value.length==0) {alert("ERRORE!\nOrario d'uscita mancante"); return;}
+		if (username.length<1) username = document.getElementById('operator_'+token).value;
 		/*
 		var currentdate = new Date(); 
 		var stop = new Date(document.getElementById('stop_'+token).value);
@@ -267,7 +283,7 @@ console.log('confirmed');
 		setTimeout(myInsert, 10*60*1000);
 		$('button').removeClass('btn-danger');
 		$('button').addClass('btn-primary');
-		if (document.getElementById(elementId).value.length>0) {
+		if (document.getElementById(elementId) && document.getElementById(elementId).value.length>0) {
 			$(applyTo).removeClass('btn-primary');
 			$(applyTo).addClass('btn-danger');
 		}
