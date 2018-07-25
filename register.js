@@ -3,8 +3,12 @@
 	document.domain = document.domain=='localhost'||document.domain=='127.0.0.1'? document.domain: 'elettra.eu';
 
 	function popupParameters() {
-		var popupWidth = 300;
-		var popupHeight = 400;
+		var popupWidth = window.innerWidth;
+		var popupHeight = window.innerHeight;
+		if (window.innerWidth<300 || window.innerHeight<400) {
+			popupWidth = 300;
+			popupHeight = 400;
+		}
 		var width = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
 		var height = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
 		// console.log('width: '+width+', width-popupWidth: '+(width-popupWidth)+', window.screenX: '+window.screenX);
