@@ -46,9 +46,8 @@
 	}
 
 	function myRefresh() {
-		var $_GET = getQueryParams(document.location.search);
 		if (refreshEnabled) {
-			window.location = typeof($_GET['backoffice']) !== 'undefined'? './register.php?backoffice=': './register.php';
+			window.location = './register.php'+document.location.search;
 		}
 	}
 
@@ -195,7 +194,7 @@ console.log('start: '+start);
 		if (document.getElementById('badge').value.length==0) {alert("ERRORE!\nBadge mancante"); return;}
 		if (document.getElementById('badge').value!='personal' && document.getElementById('badge_id').value.length==0) {alert("ERRORE!\nNumero di badge ospite o ronda mancante"); return;}
 		if (document.getElementById('badge').value=='personal' && typeof(dosimeteredUser) !== 'undefined' && dosimeteredUser.indexOf(document.getElementById('name').value)==-1) {alert("ATTENZIONE!\nUsername: "+document.getElementById('name').value+" non risulta essere dotato di badge personale");}
-		if (badge[document.getElementById('badge_id').value]) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del badge ospite"); if (r != true) return;}
+		// if (badge[document.getElementById('badge_id').value]) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del badge ospite"); if (r != true) return;}
 		if (document.getElementById('dosimeter').value.length==0) {alert("ERRORE!\nDosimetro mancante"); return;}
 		if (document.getElementById('dosimeter').value!='personal' && document.getElementById('dosimeter_id').value.length==0) {alert("ERRORE!\nNumero di dosimetro ospite mancante"); return;}
 		if (document.getElementById('dosimeter').value!='personal' && document.getElementById('dosimeter_value').value.length==0) {alert("ERRORE!\nLettura dosimetro ospite mancante"); return;}
