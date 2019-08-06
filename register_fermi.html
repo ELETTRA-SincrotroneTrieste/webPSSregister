@@ -9,7 +9,7 @@
 	<meta name="author" content="">
 	<link rel="icon" href="http://www.elettra.eu/favicon.png"> 
 
-	<title>Fermi PSS register</title>
+	<title>Registro di sala controllo di FERMI</title>
 
 	<!-- jquery -->
 	<link rel="stylesheet" href="./lib/jquery/jquery-ui.min.css">
@@ -33,6 +33,7 @@
 	  <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
 	<![endif]-->
 
+	<link href="./pss.css" rel="stylesheet">
 	<script src="./register.js"></script>
 
 	</head>
@@ -48,11 +49,11 @@
 			<span class="icon-bar"></span>
 			<span class="icon-bar"></span>
 		  </button>
-		  <a class="navbar-brand" href="#">Registro di Sala Controllo</a>
+		  <a class="navbar-brand" href="#">Registro di Sala Controllo di FERMI</a>
 		</div>
 		<div id="navbar" class="collapse navbar-collapse">
 		  <ul class="nav navbar-nav">
-			<li><a href="http://ecsproxy.elettra.eu/docs/pss/register.php">Elettra</a></li>
+			<li><a href="http://ecsproxy.elettra.eu/docs/pss/register.php">passa a Elettra</a></li>
 		  </ul>
 		</div><!--/.nav-collapse -->
 	  </div>
@@ -79,13 +80,14 @@
 <form method='post' action='./register.php' id='form_input'>
 <tr>
 	<td><input type='text' name='start' id='start' size='20' id='start' value='<!--start-->' placeholder='YYYY-MM-DD hh:mm' onClick="if (document.getElementById('start').value.length==0) mydate('start', '#save')" required>&nbsp;<span class="glyphicon glyphicon-time" onClick="mydate('start', '#save')"></span> </td>
-	<td><input type='text' class='username' name='name' id='name' value='<!--name-->' size='20' placeholder='nome.cognome' onChange="changeElement('name', '#save')" required></td>
+	<td><input type='text' class='username' name='name' id='name' value='<!--name-->' size='20' placeholder='nome.cognome' onChange="changeUser()" required>
+		<span id='operatorList' style='display:none;'><br>operatore:&nbsp;<select name='operator' id='operator'><option value=''></option><!--operators--></select></span></td>
 	<td><table>
 		<tr><td title="Linac"><input type='checkbox' name='place_linac' id='place_linac' onChange="changeElement('place_linac', '#save')"<!--place_linac-->>&nbsp;<b>Linac</b></td></tr>
 		<tr><td title="Sala Ondulatori"><input type='checkbox' name='place_uh' id='place_uh' onChange="changeElement('place_uh', '#save')"<!--place_uh-->>&nbsp;<b>Sala Ondulatori</b></td></tr>
 		<tr><td title="Klystron Gallery zone controllate"><input type='checkbox' name='place_kgzc' id='place_kgzc' onChange="changeElement('place_kgzc', '#save')"<!--place_kgzc-->>&nbsp;<b>KG zone controllate</b></td></tr>
 	</table></td>
-	<td><b><textarea name='note' id='note' cols='20' rows='2'><!--note--></textarea></b></td>
+	<td><b><textarea name='note' id='note' cols='15' rows='2'><!--note--></textarea></b></td>
 	<td><select name='badge' id='badge' onChange='changeBadge()' required><option value=''></option><option value='personal'<!--badge_personal-->>Personale</option><option value='host'<!--badge_host-->>Ospite</option><option value='search'<!--badge_search-->>Ronda</option></select>
 		<span id='badge_number' style='display:none;'><br>n:&nbsp;<input type='text' name='badge_id' id='badge_id' size='3' value='<!--badge_id-->'></span></td>
 	<td><select name='dosimeter' id='dosimeter' onChange='changeDosimeter()' required><option value=''></option><option value='personal'<!--dosimeter_personal-->>Personale</option><option value='host'<!--dosimeter_host-->>Ospite</option><option value='personal_host'<!--dosimeter_personal_host-->>Personale + Ospite</option></select>
@@ -118,13 +120,13 @@
 	<td><!--start--></td>
 	<td><!--name--></td>
 	<td><!--place--></td>
-	<td><textarea readonly cols='20' rows='1'><!--note--></textarea></td>
+	<td><textarea readonly cols='15' rows='1'><!--note--></textarea></td>
 	<td><!--badge--> <!--badge_id--></td>
 	<td><!--dosimeter--> <!--dosimeter_id--></td>
 	<td><!--dosimeter_value--></td>
 	<td><input type='text' name='stop' id='stop_<!--token-->' size='20' placeholder='YYYY-MM-DD hh:mm' onClick="if (document.getElementById('stop_<!--token-->').value.length==0) mydate('stop_<!--token-->', '#save_<!--token-->')" required>&nbsp;<span class="glyphicon glyphicon-time" onClick="mydate('stop_<!--token-->', '#save_<!--token-->')"></span></td>
 	<td>
-	  <button id='save_<!--token-->' class="btn btn-lg btn-primary" type="submit" onClick='open_validation("<!--name-->", "<!--token-->");return false;'>salva</button>
+	  <button id='save_<!--token-->' class="btn btn-lg btn-primary" type="submit" onClick='open_validation("<!--agent-->", "<!--token-->");return false;'>salva</button>
 	  <input type='hidden' name='exit' value='salva'><input type='hidden' id='start_<!--token-->' value='<!--start-->'><input type='hidden' name='token' value='<!--token-->'><input type='hidden' id='confirm_<!--token-->' name='confirm' value='NO'>
 	  <button id='modify_<!--token-->' class="btn btn-lg btn-primary" type="submit" onClick='open_edit("<!--token-->");return false;'>modifica/elimina</button>
 	</td>
