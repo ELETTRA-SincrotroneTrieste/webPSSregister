@@ -1,12 +1,7 @@
 <?php
-/*if (isset($_REQUEST['testvuo'])) {
-	$f = file("https://vuo.elettra.eu/pls/vuo/amm_people.show_tbadge_list_ecs");
-	debug($f);
-	exit(0);
-}*/
-if (isset($_REQUEST['login'])) {
-	die("<html><body><form method='post' action='?checklog'>username <input type='text' name='elettra_ldap_email'><br><br>password <input type='password' name='elettra_ldap_password'> <input type='submit'></form><br /></body></html>\n");
-}
+	if (isset($_REQUEST['login'])) {
+		die("<html><body><form method='post' action='?checklog'>username <input type='text' name='elettra_ldap_email'><br><br>password <input type='password' name='elettra_ldap_password'> <input type='submit'></form><br /></body></html>\n");
+	}
 
 	$dbtype = "pg";
 	// $dbtype = "mysqli";
@@ -48,6 +43,12 @@ if (isset($_REQUEST['login'])) {
 		}
 		return $value;
 	}
+
+	/*if (isset($_REQUEST['testvuo'])) {
+		$f = file("https://vuo.elettra.eu/pls/vuo/amm_people.show_tbadge_list_ecs");
+		debug($f);
+		exit(0);
+	}*/
 
 	// ----------------------------------------------------------------
 	// debug a select query
@@ -101,7 +102,13 @@ if (isset($_REQUEST['login'])) {
 
 	// Prepare list of users
 	$jsSearch = "	<script>\n	var entered = [".detect_entered()."];\n	var badge = {".detect_badge()."};\n	var dosimeter = {\n".detect_dosimeter()."};\n	var dosimeteredUser = [\n'".implode("',\n'", array_keys($user))."'\n];\nvar userList = [\n";
-	$f = file('./users.csv');	
+	if (time() - filemtime('./users.csv') > (7 * 86400)) {
+		// echo "<!--\nn: ".time()."<br>\nf: ".filemtime('./users.csv')."<br>\n-->\n";
+		$f = array_keys(findUsers());
+	}
+	else {
+		$f = file('./users.csv');
+	}
 	foreach ($f as $l) {$jsSearch .= "'".trim($l)."',\n";}
 	// Prepare list of hosts
 	$hostFile = $_SERVER['REMOTE_ADDR'] != '127.0.0.1'? "https://vuo.elettra.eu/pls/vuo/amm_people.show_tbadge_list_ecs": './from_vuo.csv';
@@ -223,10 +230,39 @@ if (isset($_REQUEST['login'])) {
 	}
 
 	// ----------------------------------------------------------------
+	// check Dosimeter
+	function checkDosimeter() {
+		global $sql, $machine, $dbtype;
+		$year = $_REQUEST['statistics']-0;
+		if (($year<STATISTICS_FIRST_YEAR) or ($year>date('Y'))) die("ERROR: Invalid year: $year");
+		echo "<h2>Controllo dosimetri</h2><a href='?backoffice&statistics=$year'>esci</a><br><br>\n";
+		$registerdata = $sql->sql_select("*", "access_$machine", "token>=0 AND dosimeter_number>0 AND YEAR(enter_time)=$year ORDER BY dosimeter_number, enter_time", isset($_REQUEST['debugDose'])? 1: 0);
+		// dosimeter_number, dosimeter_exitvalue, dosimeter_value
+		$old_dosimeter_value = $old_dosimeter = 0;
+		foreach ($registerdata as $data) {
+			if ($data['dosimeter_exitvalue'] < $data['dosimeter_value']) {echo " {$data['enter_time']} <a href='?backoffice&year=$year&dosimeter={$data['dosimeter_number']}'>dosimetro</a>: {$data['dosimeter_number']}, valore: {$data['dosimeter_exitvalue']} minore di: {$data['dosimeter_value']}<br>\n";}
+			if ($old_dosimeter==$data['dosimeter_number'] && $old_dosimeter_value>0 && $old_dosimeter_value > $data['dosimeter_value']) {echo "{$data['enter_time']} <a href='?backoffice&year=$year&dosimeter={$data['dosimeter_number']}'>dosimetro</a>: {$data['dosimeter_number']}, valore: {$data['dosimeter_value']} minore di: $old_dosimeter_value<br>\n";}
+			$old_dosimeter_value = $data['dosimeter_value'];
+			$old_dosimeter = $data['dosimeter_number'];
+		}
+		exit();
+	}
+
+	// ----------------------------------------------------------------
+	// compare function used by uasort()
+	function cmp($a, $b) {
+		global $sortPlace, $sortParam, $sortDirection;
+		if ($a[$sortPlace][$sortParam] == $b[$sortPlace][$sortParam]) {
+			return 0;
+		}
+		return ($a[$sortPlace][$sortParam] < $b[$sortPlace][$sortParam]) ? -1*$sortDirection : $sortDirection;
+	}
+
+	// ----------------------------------------------------------------
 	// show_statistics
 	function show_statistics() {
-		global $sql, $machine, $dbtype, $user;
-		echo '<!DOCTYPE html>
+		global $sql, $machine, $dbtype, $user, $sortPlace, $sortParam, $sortDirection;
+		if (!isset($_REQUEST['export'])) echo '<!DOCTYPE html>
 <html lang="it">
   <head>
 	<meta charset="utf-8">
@@ -237,7 +273,7 @@ if (isset($_REQUEST['login'])) {
 	<meta name="author" content="">
 	<link rel="icon" href="http://www.elettra.eu/favicon.png"> 
 
-	<title>Registro di sala controllo di FERMI</title>
+	<title>Statistiche del registro di sala controllo di '.strtoupper($machine).'</title>
 
 	<!-- jquery -->
 	<link rel="stylesheet" href="./lib/jquery/jquery-ui.min.css">
@@ -253,11 +289,36 @@ if (isset($_REQUEST['login'])) {
 	<link href="./lib/bootstrap/css/theme.css" rel="stylesheet">
 		';
 		$year = $_REQUEST['statistics']-0;
-		if (($year<STATISTICS_FIRST_YEAR) or ($year>date('Y'))) die("Invalid year: $year");
+		if (($year<STATISTICS_FIRST_YEAR) or ($year>date('Y'))) die("ERROR: Invalid year: $year");
+		$prevyy = $year > STATISTICS_FIRST_YEAR? "<a href='./register.php?backoffice&statistics=".($year-1)."'>&lt;</a> ": '';
+		$nextyy = $year < date('Y')? " <a href='./register.php?backoffice&statistics=".($year+1)."'>&gt;</a>": '';
+		$ddata = file("https://pwma-dev.elettra.eu/misc/dosimetered.php?year=$year");
+		// if (isset($_REQUEST['dosimetered'])) {echo "https://pwma-dev.elettra.eu/misc/dosimetered.php?year=$year<br>"; debug($ddata);}
+		$dosimetered = array();
+		foreach ($ddata as $d) {
+			list($name,$category) = explode(';', trim($d));
+			$dosimetered[$name] = $category;
+		}
+		if (isset($_REQUEST['dosimetered'])) {debug($dosimetered); exit();}
+		$err_cache = '';
+		$registerdata_ids = array();
+		$file = file("./{$machine}_banned.csv");
+		foreach ($file as $f) {
+			$v = explode(',', $f);
+			$banned[$v[0]] = $f;
+		}
+		if (isset($_REQUEST['removePlc'])) {
+			$banned[$_REQUEST['removePlc']] = $_REQUEST['removePlc'].date(',Y-m-d H:i:s,').$_SERVER['REMOTE_ADDR']."\n";
+			file_put_contents("./{$machine}_banned.csv", implode("",$banned));
+		}
+		if (isset($_REQUEST['restorePlc'])) {
+			unset($banned[$_REQUEST['restorePlc']]);
+			file_put_contents("./{$machine}_banned.csv", implode("",$banned));
+		}
 		if ($machine=='elettra') {
 			foreach ($user as $k=>$u) {
 				list($i,$s) = explode('.', $k);
-				$sortedUser["$s $i"] = array('sr'=>array('t'=>0,'dose'=>0),'booster'=>array('t'=>0,'dose'=>0),'sa'=>array('t'=>0,'dose'=>0));
+				$sortedUser["$s $i"] = array('sr'=>array('t'=>0,'dose'=>0,'count'=>0),'booster'=>array('t'=>0,'dose'=>0,'count'=>0),'sa'=>array('t'=>0,'dose'=>0,'count'=>0));
 			}
 			$sql2 = new SqlInterface($dbtype);
 			$db2 = $sql2->sql_connect(HOST2, USERNAME2, PASSWORD2, DB);
@@ -266,119 +327,366 @@ if (isset($_REQUEST['login'])) {
 			$db3 = $sqlBooster->sql_connect(HOST3, USERNAME3, PASSWORD3, DB3);
 			if ($dbtype!="pg") {$sqlBooster->sql_select_db(DB3, $db3);}
 			$places = array('sr', 'booster', 'sa');
+			$nameCondition = '';
+			if (!empty($_REQUEST['user'])) {
+				$n = explode('.', $_REQUEST['user']); 
+				$fullnameSearched = $n[1].' '.$n[0];
+				list($trash, $uname) = explode('.',strtr($_REQUEST['user'], array(' '=>'.')),2);
+				// $nameCondition = "(name LIKE ".quote_smart("%$uname%")." OR name LIKE '%elettra%') AND";
+				$nameCondition = "(name LIKE ".quote_smart("%$uname%").") AND";
+				echo "<table class='table table-hover'>\n<tr><td colspan='20'><h4>{$_REQUEST['user']}</h4></td></tr>\n<tr><td colspan='6'>&nbsp;</td><td colspan='3' align='center'>&nbsp;secondi totali</td></tr>
+					<tr><td>zona </td><td> DB </td><td> entrata </td><td> uscita </td><td align='right'> secondi /numeroZone </td><td align='right'> dose/numeroZone </td><td align='right'>SR</td><td align='right'>Booster</td><td align='right'>Service Area + PSA</td></tr>\n";
+			}
+			// check PLC
 			foreach ($places as $place) {
 				if ($place === 'booster') {
-					$data = $sqlBooster->sql_select("db_time,name,present,position,FROM_UNIXTIME(db_time) AS t", "booster_time_$year, booster_db50_$year, enabled_user", "position<16 AND time_id=booster_time_$year.id AND enabled_user.id=enabled_user_id ORDER BY enabled_user_id, db_time", isset($_REQUEST['debug'])? 1: 0);
+					$data = $sqlBooster->sql_select("db_time,name,present,position,FROM_UNIXTIME(db_time) AS t, CONCAT('{$year}_',position,'_',time_id) AS db50_key", "booster_time_$year, booster_db50_$year, enabled_user", "$nameCondition position<16 AND time_id=booster_time_$year.id AND enabled_user.id=enabled_user_id ORDER BY enabled_user_id, db_time", isset($_REQUEST['debug_plc_query'])? 1: 0);
 				}
 				else if ($place === 'sr') {
-					$data = $sql2->sql_select("db_time,name,present,position,FROM_UNIXTIME(db_time) AS t", "{$place}_time_$year, {$place}_db50_$year, enabled_user", "position<16 AND time_id={$place}_time_$year.id AND enabled_user.id=enabled_user_id ORDER BY enabled_user_id,db_time", isset($_REQUEST['debug'])? 1: 0);				
+					$data = $sql2->sql_select("db_time,name,present,position,FROM_UNIXTIME(db_time) AS t, CONCAT('{$year}_',position,'_',time_id) AS db50_key", "{$place}_time_$year, {$place}_db50_$year, enabled_user", "$nameCondition position<16 AND time_id={$place}_time_$year.id AND enabled_user.id=enabled_user_id ORDER BY enabled_user_id,db_time", isset($_REQUEST['debug_plc_query'])? 1: 0);				
 				}
 				else  {
-					$data = $sql2->sql_select("db_time,name,present,position,FROM_UNIXTIME(db_time) AS t", "sr_time_$year, sr_db49_$year, enabled_user", "position<64 AND time_id=sr_time_$year.id AND enabled_user.id=enabled_user_id ORDER BY enabled_user_id,db_time", isset($_REQUEST['debug'])? 1: 0);				
+					$data = $sql2->sql_select("db_time,name,present,position,FROM_UNIXTIME(db_time) AS t, CONCAT('{$year}_',position,'_',time_id) AS db50_key", "sr_time_$year, sr_db49_$year, enabled_user", "$nameCondition position<64 AND time_id=sr_time_$year.id AND enabled_user.id=enabled_user_id ORDER BY enabled_user_id,db_time", isset($_REQUEST['debugDose'])? 1: 0);				
 				}
+				// if (!empty($_REQUEST['user'])) {echo "$place, ".count($data)."<br>\n"; debug($data);}
 				$oldLine = array();
 				foreach ($data as $line) {
+					// if (!empty($_REQUEST['user'])) {echo "$place {$line['name']} $uname - ".strpos($line['name'],$uname)."<br>\n"; debug($line);}
+					$oldDose = false;
 					if ($line['present']=='Y') {
-						if ($oldLine['present']=='Y') {echo "ERRORE! USCITA MANCANTE {{$oldLine['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']})<br>\n"; }
+						if ($oldLine['present']=='Y') {$err_cache .= "ERRORE! USCITA MANCANTE {{$oldLine['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']})<br>\n"; }
 						$oldLine = $line; 
 						continue;
 					}
-					if ($line['name'] !== $oldLine['name']) {echo "ERRORE! RIGA NON VALIDA {$line['name']} - {$oldLine['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; $oldLine = $line;continue;}
+					if ($line['name'] !== $oldLine['name']) {$err_cache .= "ERRORE! RIGA NON VALIDA {$line['name']} - {$oldLine['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; $oldLine = $line;continue;}
 					if (($username = array_search($line['name'], $user)) !== false) {
 						$userCond = "name=\"$username\"";
 					}
 					else {
 						// if (strpos($line['name'], $machine)===false) {echo "ERRORE! RIGA NON VALIDA {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; $oldLine = $line;continue;}
-						list($badge_type, $badge_number) = explode('_', $line['name']);
+						list($badge_type, $badge_number) = explode('_', strtr($line['name'],array('osp_'=>'osp.')));
 						if (strpos($badge_type, 'osp')!==false) $badge_type = 'host';
 						else if (strpos($badge_type, 'ronda')!==false) $badge_type = 'search';
 						// else  {echo "ERRORE! RIGA NON VALIDA {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; $oldLine = $line; continue;}
 						$userCond = "badge_type='$badge_type' AND badge_number=$badge_number";
 					}
-					$registerdata = $sql->sql_select("name, place, dosimeter_exitvalue-dosimeter_value AS dosimeter", "access_$machine", "token>=0 AND $userCond AND UNIX_TIMESTAMP(enter_time)<{$oldLine['db_time']} AND UNIX_TIMESTAMP(exit_time)>{$line['db_time']}");
-					if ($registerdata === false) {echo "ERRORE! ACCESSO non trovato nel registro {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; $oldLine = $line;continue;}
-					list($i,$s) = explode('.', $registerdata[0]['name']);
-					$fullname = trim("$s $i");
-					if (!isset($sortedUser[$fullname])) $sortedUser[$fullname] = array('sr'=>array('t'=>0,'dose'=>0),'booster'=>array('t'=>0,'dose'=>0),'sa'=>array('t'=>0,'dose'=>0));
-					$sortedUser[$fullname][$place]['t'] += $line['db_time']-$oldLine['db_time'];
-					$sortedUser[$fullname][$place]['dose'] += $registerdata[0]['dosimeter'];
+					$registerdata = $sql->sql_select("id, name, place, dosimeter_exitvalue-dosimeter_value AS dosimeter", "access_$machine", "token>=0 AND $userCond AND UNIX_TIMESTAMP(enter_time)<{$oldLine['db_time']} AND UNIX_TIMESTAMP(exit_time)>{$line['db_time']}", isset($_REQUEST['debugDose'])? 1: 0);
+					if (isset($_REQUEST['debugDose'])) echo "name: ".$line['name']."<br>\n";
+					if ($registerdata === false) {
+						$err_cache .= "ERRORE! ACCESSO non trovato nel registro {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})\n";
+						if ($key = array_search($line['name'],$user)) {
+							list($i,$s) = explode('.', $key);
+							$fullname = trim("$s $i");
+						}
+						else {
+							$fullname = '{sconosciuto}';
+						}
+					}
+					else {
+						$oldDose = isset($registerdata_ids[$registerdata[0]['id']]); // $oldDose is useed for multiple access included in a single register row
+						$registerdata_ids[$registerdata[0]['id']] = true;
+						list($i,$s) = explode('.', $registerdata[0]['name']);
+						$fullname = trim("$s $i");
+					}
+					if (!isset($sortedUser[$fullname])) $sortedUser[$fullname] = array('sr'=>array('t'=>0,'dose'=>0,'count'=>0),'booster'=>array('t'=>0,'dose'=>0,'count'=>0),'sa'=>array('t'=>0,'dose'=>0,'count'=>0));
+					$placeArray = array_flip(explode(',',strtr($registerdata[0]['place'],array('bo'=>'booster','psa'=>'sa','ring'=>'sr'))));
+					if (!isset($placeArray[$place])) {$err_cache .= "ERRORE! ACCESSO in $place non trovato nel registro, dichiarato: {$registerdata[0]['place']}, {$line['name']} - Entrata ".date('Y-m-d H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})\n"; /*$oldLine = $line; continue;*/}
+					$place_count = count($placeArray);
+					// $place_count = 1;
+					$t = $line['db_time']-$oldLine['db_time'];
+					$dose = ($registerdata !== false)? $registerdata[0]['dosimeter']: 0;
+					$color = '';
+					if (!isset($banned[$line['db50_key']])) {
+						$sortedUser[$fullname][$place]['t'] += $t;
+						if (!$oldDose) $sortedUser[$fullname][$place]['dose'] += $dose/$place_count;
+						$sortedUser[$fullname][$place]['count']++;
+						$butt = "<button onClick=\"window.location = './register.php?backoffice&user={$_REQUEST['user']}&statistics=$year&removePlc={$line['db50_key']}'\">Elimina</button>";
+					}
+					else {
+						$color = ' style="background-color: plum"';
+						$butt = "<button onClick=\"window.location = './register.php?backoffice&user={$_REQUEST['user']}&statistics=$year&restorePlc={$line['db50_key']}'\">Ripristina</button>";
+					}
+					if (!empty($_REQUEST['user']) && $fullnameSearched==$fullname) {echo "<tr$color><td><a href='http://ecsproxy.elettra.eu/docs/pss/elettra.php?var=Show&startdate=".date('Y-m-d+H:i:s', $oldLine['db_time']-3701)."&stopdate=".date('Y-m-d H:i:s', $line['db_time']+1)."&plc=all'>$place</a> </td><td> PLC </td><td> ".date('Y-m-d H:i:s', $oldLine['db_time'])." </td><td> ".date('Y-m-d H:i:s', $line['db_time']).
+						" </td><td align='right'> ".round($t)." /1 </td><td align='right'> $dose/$place_count </td><td align='right'>".round($sortedUser[$fullname]['sr']['t'])."</td><td align='right'>".round($sortedUser[$fullname]['booster']['t'])."</td><td align='right'>".round($sortedUser[$fullname]['sa']['t'])."</td><td>$butt</td></tr>\n";}
+					if (isset($_REQUEST['debugSort']) && $fullname == '{sconosciuto}') {debug($line);debug($t);debug($dose);}
+					if (isset($_REQUEST['check_user']) && $fullname==$_REQUEST['check_user']) echo "t: $t (".date('d/m/Y H:i:s',$line['db_time'])."-{$oldLine['db_time']}), dose: $dose, place: $place ({$registerdata[0]['place']}), place_count: $place_count<br>\n";
 					if (isset($_REQUEST['debug'])) echo "{$registerdata[0]['name']} - Luogo: $place - Entrata: ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita: ".date('d/m/Y H:i:s', $line['db_time'])." - Time ".($line['db_time']-$oldLine['db_time'])." [s] - Dose: {$registerdata[0]['dosimeter']}<br>\n";
 					$oldLine = $line;
 				}
 			}
-			ksort($sortedUser);
-			if (isset($_REQUEST['debug'])) debug($sortedUser);
-			echo "<table class='table table-hover'><tr><td>Cognome Nome</td><td colspan='2' align='center'>SR</td><td colspan='2' align='center'>Booster</td><td colspan='2' align='center'>Service Area + PSA</td></tr>\n";
-			echo "<tr><td>&nbsp;</td><td align='right'>t</td><td align='right'>dose</td><td align='right'>t</td><td align='right'>dose</td><td align='right'>t</td><td align='right'>dose</td></tr>\n";
-			foreach ($sortedUser as $fullname=>$user) {
-				$dt = $user['sa']['t']-$user['sr']['t']-$user['booster']['t'];
-				if ($dt<0) $dt = 0;
-				$dd = $user['sa']['dose']-$user['sr']['dose']-$user['booster']['dose'];
-				if ($dd<0) $dd = 0;
-				$n = explode(' ', $fullname);
-				echo "<tr><td><a href='?backoffice&user={$n[1]}.{$n[0]}&year=$year'>$fullname</a></td><td align='right'>".displayTime($user['sr']['t'])."</td><td align='right'>{$user['sr']['dose']}</td>
-				                              <td align='right'>".displayTime($user['booster']['t'])."</td><td align='right'>{$user['booster']['dose']}</td>
-											  <td align='right'>".displayTime($dt)."</td><td align='right'>$dd</td></tr>\n";
+			$not_in_plc = empty($registerdata_ids)? '': "AND id NOT IN (".implode(',', array_keys($registerdata_ids)).")";
+			$rdata = $sql->sql_select("id, name, place, dosimeter_exitvalue-dosimeter_value AS dose, enter_time, exit_time, UNIX_TIMESTAMP(exit_time)-UNIX_TIMESTAMP(enter_time) AS t", "access_$machine", "token>=0 $not_in_plc AND enter_time>='$year-01-01' AND enter_time<='$year-12-31 23:59:59'", isset($_REQUEST['debug_register_query'])? 1: 0);
+			$goto_page = urlencode("&user=$fullnameSearched&statistics=$year");
+			// if (!empty($_REQUEST['user'])) {echo "SELECT id, name, place, dosimeter_exitvalue-dosimeter_value AS dose, enter_time, exit_time, UNIX_TIMESTAMP(exit_time)-UNIX_TIMESTAMP(enter_time) AS t FROM access_$machine WHERE token>=0 AND id NOT IN (".implode(',', array_keys($registerdata_ids)).") AND enter_time>='$year-01-01' AND enter_time<='$year-12-31 23:59:59'"; debug($rdata);}
+			foreach ($rdata as $d) {
+				if (empty($d['exit_time'])) {$err_cache .= "ERRORE! USCITA MANCANTE nel registro, {$d['enter_time']} {$d['name']} {$d['place']}\n"; continue;}
+				list($i,$s) = explode('.', $d['name']);
+				$fullname = trim("$s $i");
+				$placeArray = array_flip(explode(',',strtr($d['place'],array('bo'=>'booster','psa'=>'sa','ring'=>'sr'))));
+				if (isset($placeArray['sr']) || isset($placeArray['booster'])) {$err_cache .= "ERRORE! ACCESSO dichiarato nel registro ma non trovato nel PLC, {$d['enter_time']} {$d['name']} {$d['place']}\n";}
+				$place_count = count($placeArray);
+				if (!isset($sortedUser[$fullname])) $sortedUser[$fullname] = array('sr'=>array('t'=>0,'dose'=>0,'count'=>0),'booster'=>array('t'=>0,'dose'=>0,'count'=>0),'sa'=>array('t'=>0,'dose'=>0,'count'=>0));
+				foreach ($placeArray as $place=>$trash) {
+					$sortedUser[$fullname][$place]['count']++;
+					$sortedUser[$fullname][$place]['t'] += $d['t']/$place_count;
+					$sortedUser[$fullname][$place]['dose'] += $d['dose']/$place_count;
+					if (!empty($_REQUEST['user']) && $fullnameSearched==$fullname) {echo "<tr><td>$place </td><td> registro </td><td> {$d['enter_time']} </td><td> {$d['exit_time']} </td><td align='right'> ".round($d['t'])." /$place_count </td><td align='right'> {$d['dose']}/$place_count </td><td align='right'>".
+						round($sortedUser[$fullname]['sr']['t'])."</td><td align='right'>".round($sortedUser[$fullname]['booster']['t'])."</td><td align='right'>".round($sortedUser[$fullname]['sa']['t'])."</td><td><button onClick=\"document.location='?backoffice&update&id={$d['id']}&goto_page=$goto_page'\">modifica</button></td></tr>\n";}
+				}
+				if (isset($_REQUEST['debug_id'])) {debug($d);debug($placeArray); debug($sortedUser[$fullname]);}
 			}
-			echo "</table>\n";
-			echo "Statistics under construction.";
-			// SELECT *,FROM_UNIXTIME(db_time) AS t FROM sr_time_2017, sr_db50_2017 WHERE position<160 AND time_id=sr_time_2017.id ORDER BY db_time
-			// SELECT *,FROM_UNIXTIME(db_time) AS t FROM booster_time_2017, booster_db50_2017 WHERE position<16 AND time_id=booster_time_2017.id ORDER BY enabled_user_id, db_time;
+			$buffer = isset($_REQUEST['export'])? '': "</head>\n<body style='padding: 10px;'>\n<h2>Elettra</h2>\n<b>$prevyy$year$nextyy</b><br>\n<a href='?backoffice&statistics=$year&checkDosimeter'>controllo dosimetri</a>&nbsp;&nbsp;&nbsp;<a href='?backoffice&statistics=$year&export=CSV'>esporta CSV</a><br><textarea style='width:100%;heigth:15%'>$err_cache</textarea><br>";
+			if (isset($_REQUEST['sortKey'])) {
+				list($sortPlace, $sortParam) = explode('_',$_REQUEST['sortKey']);
+				$sortDirection = isset($_REQUEST['sortDirection'])? ($_REQUEST['sortDirection']=='desc'? -1: 1): 1;
+				uasort($sortedUser, "cmp");
+			}
+			else {
+				(isset($_REQUEST['sortDirection']) && $_REQUEST['sortDirection']=='desc')? krsort($sortedUser) :ksort($sortedUser);
+			}
+			if (isset($_REQUEST['export'])) {
+				$buffer .= "Cognome Nome;;;SR;;;Booster;;;Service Area + PSA\n";
+				$buffer .= ";;n.accessi;t;dose;n.accessi;t;dose;n.accessi;t;dose\n";
+			}
+			else {
+				$buffer .= "<table class='table table-hover'><tr><td colspan='2'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year\"' src='./img/blue_up.png'>&nbsp;Cognome Nome&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td colspan='3' align='center'>SR</td><td colspan='3' align='center' style='background-color: #fff0f0;'>Booster</td><td colspan='3' align='center'>Service Area + PSA</td></tr>\n";
+				$buffer .= "<tr><td colspan='2'>&nbsp;</td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sr_count\"' src='./img/blue_up.png'>&nbsp;n.accessi&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sr_count&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sr_t\"' src='./img/blue_up.png'>&nbsp;&nbsp;t&nbsp;&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sr_t&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sr_dose\"' src='./img/blue_up.png'>&nbsp;dose&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sr_dose&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right' style='background-color: #fff0f0;'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=booster_count\"' src='./img/blue_up.png'>&nbsp;n.accessi&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=booster_count&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right' style='background-color: #fff0f0;'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=booster_t\"' src='./img/blue_up.png'>&nbsp;&nbsp;t&nbsp;&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=booster_t&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right' style='background-color: #fff0f0;'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=booster_dose\"' src='./img/blue_up.png'>&nbsp;dose&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=booster_dose&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sa_count\"' src='./img/blue_up.png'>&nbsp;n.accessi&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sa_count&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sa_t\"' src='./img/blue_up.png'>&nbsp;&nbsp;t&nbsp;&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sa_t&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sa_dose\"' src='./img/blue_up.png'>&nbsp;dose&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=sa_dose&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					</tr>\n";
+			}
+			$sum = array('sa'=>array('t'=>0,'dose'=>0,'count'=>0),'sr'=>array('t'=>0,'dose'=>0,'count'=>0),'booster'=>array('t'=>0,'dose'=>0,'count'=>0));
+			$params = array('t','dose','count');
+			foreach ($sortedUser as $fullname=>$user) {
+				$oname = $fullname;
+				if (strpos($fullname, ' ')!==false) {
+					$n = explode(' ', $fullname);
+					$oname = $n[1].'.'.$n[0];
+				}
+				if (!empty($_REQUEST['user']) && $fullnameSearched!=$fullname) continue;
+				foreach ($places as $place) {
+					foreach ($params as $param) {
+						$sum[$place][$param] += $user[$place][$param];
+					}
+				}
+				if (isset($_REQUEST['export'])) {
+					$buffer .= "$fullname;{$dosimetered[$oname]};";
+					$buffer .= "{$user['sr']['count']};".displayTime($user['sr']['t']).";".($user['sr']['dose']).";";
+					$buffer .= "{$user['booster']['count']};".displayTime($user['booster']['t']).";".($user['booster']['dose']).";";
+					$buffer .= "{$user['sa']['count']};".displayTime($user['sa']['t']).";".($user['sa']['dose'])."\n";
+				}
+				else {
+					$buffer .= "<tr><td><a href='?backoffice&user=$oname&".(empty($_REQUEST['user'])? 'statistics': 'year')."=$year'>$fullname</a> </td><td> {$dosimetered[$oname]}</td>
+						<td align='right'>{$user['sr']['count']}</td><td align='right'>".displayTime($user['sr']['t'])."</td><td align='right'>".($user['sr']['dose'])."</td>
+						<td align='right' style='background-color: #fff0f0;'>{$user['booster']['count']}</td><td align='right' style='background-color: #fff0f0;'>".displayTime($user['booster']['t'])."</td><td align='right' style='background-color: #fff0f0;'>".($user['booster']['dose'])."</td>
+						<td align='right'>{$user['sa']['count']}</td><td align='right'>".displayTime($user['sa']['t'])."</td><td align='right'>{$user['sa']['dose']}</td></tr>\n";
+				}
+			}
+			if (empty($_REQUEST['user'])) {
+				if (isset($_REQUEST['export'])) {
+					$buffer .= "TOTALE;;";
+					$buffer .= "{$sum['sr']['count']};".displayTime($sum['sr']['t']).";".($sum['sr']['dose']).";";
+					$buffer .= "{$sum['booster']['count']};".displayTime($sum['booster']['t']).";".($sum['booster']['dose']).";";
+					$buffer .= "{$sum['sa']['count']};".displayTime($sum['sa']['t']).";".($sum['sa']['dose'])."\n";
+				}
+				else {
+					$buffer .= "<tr><td colspan='2'>TOTALE</td>
+						<td align='right'>{$sum['sr']['count']}</td><td align='right'>".displayTime($sum['sr']['t'])."</td><td align='right'>".($sum['sr']['dose'])."</td>
+						<td align='right'>{$sum['booster']['count']}</td><td align='right'>".displayTime($sum['booster']['t'])."</td><td align='right'>".($sum['booster']['dose'])."</td>
+						<td align='right'>{$sum['sa']['count']}</td><td align='right'>".displayTime($sum['sa']['t'])."</td><td align='right'>{$sum['sa']['dose']}</td></tr>\n</table>\n";
+				}
+			}
 		}
 		if ($machine=='fermi') {
 			foreach ($user as $k=>$u) {
 				list($i,$s) = explode('.', $k);
-				$sortedUser["$s $i"] = array('linac'=>array('t'=>0,'dose'=>0),'undulator'=>array('t'=>0,'dose'=>0));
+				$sortedUser["$s $i"] = array('linac'=>array('t'=>0,'dose'=>0,'count'=>0),'undulator'=>array('t'=>0,'dose'=>0,'count'=>0),'kgzc'=>array('t'=>0,'dose'=>0,'count'=>0));
 			}
-			$places = array('linac', 'undulator');
+			$places = array('linac', 'undulator', 'kgzc');
+			if (!empty($_REQUEST['user'])) {
+				$n = explode('.', $_REQUEST['user']); 
+				$fullnameSearched = $n[1].' '.$n[0];
+				list($trash, $uname) = explode('.',strtr($_REQUEST['user'], array(' '=>'.')),2);
+				$nameCondition = "(name LIKE ".quote_smart("%$uname%")." OR name LIKE '%fermi%') AND";
+				echo "<table class='table table-hover'>\n<tr><td colspan='20'><h4>{$_REQUEST['user']}</h4></td></tr>\n<tr><td colspan='6'>&nbsp;</td><td colspan='3' align='center'>&nbsp;secondi totali</td></tr>
+					<tr><td>zona </td><td> DB </td><td> entrata </td><td> uscita </td><td align='right'> secondi /numeroZone </td><td align='right'> dose/numeroZone </td><td align='right'>Linac</td><td align='right'>Sala Ondulatori</td><td align='right'>KGZC</td><td>&nbsp;</td></tr>\n";
+			}
+			// check PLC
 			foreach ($places as $place) {
-				$data = $sql->sql_select("db_time,name,present,FROM_UNIXTIME(db_time) AS t", "{$place}_time_$year, {$place}_db50_$year, enabled_user", "position<16 AND time_id={$place}_time_$year.id AND enabled_user.id=enabled_user_id ORDER BY enabled_user_id,db_time", isset($_REQUEST['debug'])? 1: 0);
+				if ($place == 'kgzc') continue;
+				$data = $sql->sql_select("db_time,name,present,FROM_UNIXTIME(db_time) AS t, CONCAT('{$year}_',position,'_',time_id) AS db50_key", "{$place}_time_$year, {$place}_db50_$year, enabled_user", "position<16 AND time_id={$place}_time_$year.id AND enabled_user.id=enabled_user_id ORDER BY enabled_user_id,db_time", isset($_REQUEST['debug_plc_query'])? 1: 0);
 				$oldLine = array();
 				foreach ($data as $line) {
+					$oldDose = false;
 					if ($line['present']=='Y') {
-						if ($oldLine['present']=='Y') {echo "ERRORE! USCITA MANCANTE {{$oldLine['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']})<br>\n"; }
+						// if (isset($banned[$line['db50_key']])) echo "---------------: {$line['db50_key']}<br>\n";
+						if ($oldLine['present']=='Y') {$err_cache .= "ERRORE! USCITA MANCANTE {{$oldLine['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']})<br>\n"; }
 						$oldLine = $line; 
 						continue;
 					}
-					if ($line['name'] !== $oldLine['name']) {echo "ERRORE! RIGA NON VALIDA {$line['name']} - {$oldLine['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; $oldLine = $line;continue;}
+					if ($line['name'] !== $oldLine['name']) {$err_cache .= "ERRORE! RIGA NON VALIDA {$line['name']} - {$oldLine['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; $oldLine = $line;continue;}
 					if (($username = array_search($line['name'], $user)) !== false) {
 						$userCond = "name=\"$username\"";
 					}
 					else {
-						if (strpos($line['name'], $machine)===false) {echo "ERRORE! RIGA NON VALIDA {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; $oldLine = $line;continue;}
+						// if (strpos($line['name'], $machine)===false) {$err_cache .= "ERRORE! RIGA NON VALIDA {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; }
 						list($badge_type, $badge_number) = explode($machine, $line['name']);
 						if (strpos($badge_type, 'osp')!==false) $badge_type = 'host';
 						else if (strpos($badge_type, 'ronda')!==false) $badge_type = 'search';
-						else  {echo "ERRORE! RIGA NON VALIDA {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; $oldLine = $line; continue;}
+						// else  {$err_cache .= "ERRORE! RIGA NON VALIDA {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n";}
 						$userCond = "badge_type='$badge_type' AND badge_number=$badge_number";
 					}
-					$registerdata = $sql->sql_select("name, place, dosimeter_exitvalue-dosimeter_value AS dosimeter", "access_$machine", "token>=0 AND $userCond AND UNIX_TIMESTAMP(enter_time)<{$oldLine['db_time']} AND UNIX_TIMESTAMP(exit_time)>{$line['db_time']};");
-					if ($registerdata === false) {echo "ERRORE! ACCESSO non trovato nel registro {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})<br>\n"; $oldLine = $line;continue;}
-					list($i,$s) = explode('.', $registerdata[0]['name']);
-					$fullname = trim("$s $i");
-					if (!isset($sortedUser[$fullname])) $sortedUser[$fullname] = array('linac'=>array('t'=>0,'dose'=>0),'undulator'=>array('t'=>0,'dose'=>0));
-					$sortedUser[$fullname][$place]['t'] += $line['db_time']-$oldLine['db_time'];
-					$sortedUser[$fullname][$place]['dose'] += $registerdata[0]['dosimeter'];
+					$registerdata = $sql->sql_select("id, name, place, dosimeter_exitvalue-dosimeter_value AS dosimeter", "access_$machine", "token>=0 AND $userCond AND UNIX_TIMESTAMP(enter_time)<{$oldLine['db_time']} AND UNIX_TIMESTAMP(exit_time)>{$line['db_time']};");
+					if ($registerdata === false) {
+						$err_cache .= "ERRORE! ACCESSO non trovato nel registro {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})\n";
+						if ($key = array_search($line['name'],$user)) {
+							list($i,$s) = explode('.', $key);
+							$fullname = trim("$s $i");
+						}
+						else {
+							$fullname = '{sconosciuto}';
+						}
+					}
+					else {
+						$oldDose = isset($registerdata_ids[$registerdata[0]['id']]); // $oldDose is useed for multiple access included in a single register row
+						$registerdata_ids[$registerdata[0]['id']] = true;
+						list($i,$s) = explode('.', $registerdata[0]['name']);
+						$fullname = trim("$s $i");
+					}
+					if (!isset($sortedUser[$fullname])) $sortedUser[$fullname] = array('linac'=>array('t'=>0,'dose'=>0,'count'=>0),'undulator'=>array('t'=>0,'dose'=>0,'count'=>0),'kgzc'=>array('t'=>0,'dose'=>0,'count'=>0));
+					$placeArray = array_flip(explode(',',$registerdata[0]['place']));
+					if (!isset($placeArray[$place])) {$err_cache .= "ERRORE! ACCESSO in $place non trovato nel registro, dichiarato: {$registerdata[0]['place']}, {$line['name']} - Entrata ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita ".date('d/m/Y H:i:s', $line['db_time'])." ({$line['db_time']})\n"; /*$oldLine = $line; continue;*/}
+					$place_count = count($placeArray);
+					// if (isset($banned[$line['db50_key']])) echo "---------------: {$line['db50_key']}<br>\n";
+					// $place_count = 1;
+					$t = $line['db_time']-$oldLine['db_time'];
+					$dose = ($registerdata !== false)? $registerdata[0]['dosimeter']: 0;
+					$color = '';
+					if (!isset($banned[$line['db50_key']])) {
+						$sortedUser[$fullname][$place]['t'] += $t;
+						if (!$oldDose) $sortedUser[$fullname][$place]['dose'] += $dose/$place_count;
+						$sortedUser[$fullname][$place]['count']++;
+						$butt = "<button onClick=\"window.location = './register.php?backoffice&user={$_REQUEST['user']}&statistics=$year&removePlc={$line['db50_key']}'\">Elimina</button>";
+					}
+					else {
+						$color = ' style="background-color: plum"';
+						$butt = "<button onClick=\"window.location = './register.php?backoffice&user={$_REQUEST['user']}&statistics=$year&restorePlc={$line['db50_key']}'\">Ripristina</button>";
+					}
+					if (!empty($_REQUEST['user']) && $fullnameSearched==$fullname) {echo "<tr$color><td><a href='http://fcsproxy.elettra.eu/docs/pss/fermi.php?var=Show&startdate=".date('Y-m-d+H:i:s', $oldLine['db_time']-3701)."&stopdate=".date('Y-m-d H:i:s', $line['db_time']+1)."&plc=all'>$place</a> </td><td> PLC </td><td> ".date('Y-m-d H:i:s', $oldLine['db_time'])." </td><td> ".date('Y-m-d H:i:s', $line['db_time']).
+						" </td><td align='right'> ".round($t)." /1 </td><td align='right'> $dose/$place_count </td><td align='right'>".round($sortedUser[$fullname]['linac']['t'])."</td><td align='right'>".round($sortedUser[$fullname]['undulator']['t'])."</td><td align='right'>".round($sortedUser[$fullname]['kgzc']['t'])."</td><td>$butt</td></tr>\n";}
+					if (isset($_REQUEST['debugSort']) && $fullname == '{sconosciuto}') {debug($line);debug($t);debug($dose);}
+					if (isset($_REQUEST['check_user']) && $fullname==$_REQUEST['check_user']) echo "t: $t (".date('Y-m-d H:i:s',$line['db_time'])."-{$oldLine['db_time']}), dose: $dose, place: $place ({$registerdata[0]['place']}), place_count: $place_count<br>\n";
 					if (isset($_REQUEST['debug'])) echo "{$registerdata[0]['name']} - Luogo: $place - Entrata: ".date('d/m/Y H:i:s', $oldLine['db_time'])." ({$oldLine['db_time']}) - Uscita: ".date('d/m/Y H:i:s', $line['db_time'])." - Time ".($line['db_time']-$oldLine['db_time'])." [s] - Dose: {$registerdata[0]['dosimeter']}<br>\n";
 					$oldLine = $line;
 				}
 			}
-			// debug($sortedUser); echo "<hr>\n";
-			ksort($sortedUser);
-			if (isset($_REQUEST['debug'])) debug($sortedUser);
-			echo "<table class='table table-hover'><tr><td>Cognome Nome</td><td colspan='2' align='center'>Linac</td><td colspan='2' align='center'>UH</td></tr>\n";
-			echo "<tr><td>&nbsp;</td><td align='right'>t</td><td align='right'>dose</td><td align='right'>t</td><td align='right'>dose</td></tr>\n";
-			foreach ($sortedUser as $fullname=>$user) {
-				$n = explode(' ', $fullname);
-				echo "<tr><td><a href='?backoffice&user={$n[1]}.{$n[0]}&year=$year'>$fullname</a></td><td align='right'>".displayTime($user['linac']['t'])."</td><td align='right'>{$user['linac']['dose']}</td><td align='right'>".displayTime($user['undulator']['t'])."</td><td align='right'>{$user['undulator']['dose']}</td></tr>\n";
+			$not_in_plc = empty($registerdata_ids)? '': "AND id NOT IN (".implode(',', array_keys($registerdata_ids)).")";
+			$rdata = $sql->sql_select("id, name, place, dosimeter_exitvalue-dosimeter_value AS dose, enter_time, exit_time, UNIX_TIMESTAMP(exit_time)-UNIX_TIMESTAMP(enter_time) AS t", "access_$machine", "token>=0 $not_in_plc AND enter_time>='$year-01-01' AND enter_time<='$year-12-31 23:59:59'");
+			$goto_page = urlencode("&user=$fullnameSearched&statistics=$year");
+			foreach ($rdata as $d) {
+				if (empty($d['exit_time'])) {$err_cache .= "ERRORE! USCITA MANCANTE nel registro, {$d['enter_time']} {$d['name']} {$d['place']}\n"; continue;}
+				list($i,$s) = explode('.', $d['name']);
+				$fullname = trim("$s $i");
+				$placeArray = array_flip(explode(',',strtr($d['place'],array('uh'=>'undulator'))));
+				if (isset($placeArray['linac']) || isset($placeArray['undulator'])) {$err_cache .= "ERRORE! ACCESSO dichiarato nel registro ma non trovato nel PLC, {$d['enter_time']} {$d['name']} {$d['place']}\n";}
+				$place_count = count($placeArray);
+				if (!isset($sortedUser[$fullname])) $sortedUser[$fullname] = array('linac'=>array('t'=>0,'dose'=>0,'count'=>0),'undulator'=>array('t'=>0,'dose'=>0,'count'=>0),'kgzc'=>array('t'=>0,'dose'=>0,'count'=>0));
+				foreach ($placeArray as $place=>$trash) {
+					$sortedUser[$fullname][$place]['count']++;
+					$sortedUser[$fullname][$place]['t'] += $d['t']/$place_count;
+					$sortedUser[$fullname][$place]['dose'] += $d['dose']/$place_count;
+					if (!empty($_REQUEST['user']) && $fullnameSearched==$fullname) {echo "<tr><td>$place </td><td> registro </td><td> {$d['enter_time']} </td><td> {$d['exit_time']} </td><td align='right'> ".round($d['t'])." /$place_count </td><td align='right'> {$d['dose']}/$place_count </td><td align='right'>".
+						round($sortedUser[$fullname]['linac']['t'])."</td><td align='right'>".round($sortedUser[$fullname]['undulator']['t'])."</td><td align='right'>".round($sortedUser[$fullname]['kgzc']['t'])."</td><td><button onClick=\"document.location='?backoffice&update&id={$d['id']}&goto_page=$goto_page'\">modifica</button></td></tr>\n";}
+				}
+				if (isset($_REQUEST['debug_id'])) {
+					debug($d);debug($place);
+				}
 			}
-			echo "</table>\n";
-// http://fcsproxy.elettra.trieste.it/docs/fm.php?dir=/var/www/docs/egiga2m&dbname=fermiPSSrw&database&query=SELECT%20name,%20place,%20UNIX_TIMESTAMP(exit_time)-UNIX_TIMESTAMP(enter_time)%20AS%20time,%20SUM(dosimeter_exitvalue-dosimeter_value)%20AS%20dose%20FROM%20access_fermi%20WHERE%20token%3E=0%20AND%20enter_time%3E%272017-01-01%2000:00:00%27%20GROUP%20BY%20name,%20place
-// SELECT name, place, UNIX_TIMESTAMP(exit_time)-UNIX_TIMESTAMP(enter_time) AS time, SUM(dosimeter_exitvalue-dosimeter_value) AS dose FROM access_fermi WHERE token>=0 AND enter_time>'2017-01-01 00:00:00' GROUP BY name, place
-// SELECT db_time,name,present FROM undulator_time_2017, undulator_db50_2017, enabled_user WHERE position=0 AND time_id=undulator_time_2017.id AND enabled_user.id=enabled_user_id;
-// SELECT db_time,name,present FROM linac_time_2017, linac_db50_2017, enabled_user WHERE position=0 AND time_id=linac_time_2017.id AND enabled_user.id=enabled_user_id;
-// SELECT name, place, dosimeter_exitvalue-dosimeter_value AS dosimeter FROM access_fermi WHERE token>=0 AND badge_number=1 AND UNIX_TIMESTAMP(enter_time)<1485268163.967 AND UNIX_TIMESTAMP(exit_time)>1485269498.610;
+			$buffer = isset($_REQUEST['export'])? '': "</head>\n<body style='padding: 10px;'>\n<h2>FERMI</h2>\n<b>$prevyy$year$nextyy</b><br>\n<a href='?backoffice&statistics=$year&checkDosimeter'>controllo dosimetri</a>&nbsp;&nbsp;&nbsp;<a href='?backoffice&statistics=$year&export=CSV'>esporta CSV</a><br><textarea style='width:100%;heigth:15%'>$err_cache</textarea><br>";
+			// debug($sortedUser); echo "<hr>\n";
+			if (isset($_REQUEST['sortKey'])) {
+				list($sortPlace, $sortParam) = explode('_',$_REQUEST['sortKey']);
+				$sortDirection = isset($_REQUEST['sortDirection'])? ($_REQUEST['sortDirection']=='desc'? -1: 1): 1;
+				uasort($sortedUser, "cmp");
+			}
+			else {
+				(isset($_REQUEST['sortDirection']) && $_REQUEST['sortDirection']=='desc')? krsort($sortedUser) :ksort($sortedUser);
+			}
+			if (isset($_REQUEST['export'])) {
+				$buffer .= "Cognome Nome;;;Linac;;;Sala Ondulatori;;;Sala Klystron\n";
+				$buffer .= ";;n.accessi;t;dose;n.accessi;t;dose;n.accessi;t;dose\n";
+			}
+			else {
+				$buffer .= "<table class='table table-hover'><tr><td colspan='2'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year\"' src='./img/blue_up.png'>&nbsp;Cognome Nome&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortDirection=desc\"' src='./img/blue_down.png'></td>
+				<td colspan='3' align='center'>Linac</td><td colspan='3' align='center' style='background-color: #fff0f0;'>Sala Ondulatori</td><td colspan='3' align='center'>KGZC</td></tr>\n";
+				$buffer .= "<tr><td colspan='2'>&nbsp;</td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=linac_count\"' src='./img/blue_up.png'>&nbsp;n.accessi&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=linac_count&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=linac_t\"' src='./img/blue_up.png'>&nbsp;&nbsp;t&nbsp;&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=linac_t&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=linac_dose\"' src='./img/blue_up.png'>&nbsp;dose&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=linac_dose&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right' style='background-color: #fff0f0;'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=undulator_count\"' src='./img/blue_up.png'>&nbsp;n.accessi&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=undulator_count&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right' style='background-color: #fff0f0;'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=undulator_t\"' src='./img/blue_up.png'>&nbsp;&nbsp;t&nbsp;&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=undulator_t&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right' style='background-color: #fff0f0;'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=undulator_dose\"' src='./img/blue_up.png'>&nbsp;dose&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=undulator_dose&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=kgzc_count\"' src='./img/blue_up.png'>&nbsp;n.accessi&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=kgzc_count&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=kgzc_t\"' src='./img/blue_up.png'>&nbsp;&nbsp;t&nbsp;&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=kgzc_t&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					<td align='right'><input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=kgzc_dose\"' src='./img/blue_up.png'>&nbsp;dose&nbsp;<input type='image' onClick='window.location=\"./register.php?backoffice&statistics=$year&sortKey=kgzc_dose&sortDirection=desc\"' src='./img/blue_down.png'></td>
+					</tr>\n";
+			}
+			$sum = array('linac'=>array('t'=>0,'dose'=>0,'count'=>0),'undulator'=>array('t'=>0,'dose'=>0,'count'=>0),'kgsp'=>array('t'=>0,'dose'=>0,'count'=>0));
+			$params = array('t','dose','count');
+			foreach ($sortedUser as $fullname=>$user) {
+				$oname = $fullname;
+				if (strpos($fullname, ' ')!==false) {
+					$n = explode(' ', $fullname);
+					$oname = $n[1].'.'.$n[0];
+				}
+				if (!empty($_REQUEST['user']) && $fullnameSearched!=$fullname) continue;
+				foreach ($places as $place) {
+					foreach ($params as $param) {
+						$sum[$place][$param] += $user[$place][$param];
+					}
+				}
+				if (isset($_REQUEST['export'])) {
+					$buffer .= "$fullname;{$dosimetered[$oname]};";
+					$buffer .= "{$user['linac']['count']};".displayTime($user['linac']['t']).";".($user['linac']['dose']).";";
+					$buffer .= "{$user['undulator']['count']};".displayTime($user['undulator']['t']).";".($user['undulator']['dose']).";";
+					$buffer .= "{$user['kgzc']['count']};".displayTime($user['kgzc']['t']).";".($user['kgzc']['dose'])."\n";
+				}
+				else {
+					$buffer .= "<tr><td><a href='?backoffice&user=$oname&".(empty($_REQUEST['user'])? 'statistics': 'year')."=$year'>$fullname</a> </td><td> {$dosimetered[$oname]}</td>
+						<td align='right'>{$user['linac']['count']}</td><td align='right'>".displayTime($user['linac']['t'])."</td><td align='right'>".($user['linac']['dose'])."</td>
+						<td align='right' style='background-color: #fff0f0;'>{$user['undulator']['count']}</td><td align='right' style='background-color: #fff0f0;'>".displayTime($user['undulator']['t'])."</td><td align='right' style='background-color: #fff0f0;'>".($user['undulator']['dose'])."</td>
+						<td align='right'>{$user['kgzc']['count']}</td><td align='right'>".displayTime($user['kgzc']['t'])."</td><td align='right'>{$user['kgzc']['dose']}</td></tr>\n";
+				}
+			}
+			if (empty($_REQUEST['user'])) {
+				if (isset($_REQUEST['export'])) {
+					$buffer .= "TOTALE;;";
+					$buffer .= "{$sum['linac']['count']};".displayTime($sum['linac']['t']).";".($sum['linac']['dose']).";";
+					$buffer .= "{$sum['undulator']['count']};".displayTime($sum['undulator']['t']).";".($sum['undulator']['dose']).";";
+					$buffer .= "{$sum['kgzc']['count']};".displayTime($sum['kgzc']['t']).";".($sum['kgzc']['dose'])."\n";
+				}
+				else {
+					$buffer .= "<tr><td colspan='2'>TOTALE</td>
+						<td align='right'>{$sum['linac']['count']}</td><td align='right'>".displayTime($sum['linac']['t'])."</td><td align='right'>".($sum['linac']['dose'])."</td>
+						<td align='right'>{$sum['undulator']['count']}</td><td align='right'>".displayTime($sum['undulator']['t'])."</td><td align='right'>".($sum['undulator']['dose'])."</td>
+						<td align='right'>{$sum['kgzc']['count']}</td><td align='right'>".displayTime($sum['kgzc']['t'])."</td><td align='right'>{$sum['kgzc']['dose']}</td></tr>\n</table>\n";
+				}
+			}
 		}
+		if (isset($_REQUEST['export'])) {
+			header("Content-Disposition: attachment; filename=pss.csv");
+			header("Content-Type: application/x-csv");
+			header("Content-Length: ".strlen($buffer));
+		}
+		echo $buffer;
 		exit(0);
 	}
 
@@ -486,8 +794,8 @@ if (isset($_REQUEST['login'])) {
 	function update_backoffice() {
 		global $sql, $machine, $dbtype, $place;
 		$template = explode('<!--item-->', file_get_contents("register_backoffice_$machine.html"));
-		$data = $sql->sql_select("*", "access_$machine", "id=".quote_smart($_REQUEST[id]));
-		if (!$data) {sql_debug("*", "access_$machine", "id=".quote_smart($_REQUEST[id])); echo ";<br>\n".$sql->sql_error(); exit();}
+		$data = $sql->sql_select("*", "access_$machine", "id=".quote_smart($_REQUEST['id']));
+		if (!$data) {sql_debug("*", "access_$machine", "id=".quote_smart($_REQUEST['id'])); echo ";<br>\n".$sql->sql_error(); exit();}
 		$d = $data[0];
 		$replace["name='start'"] = "name='start' value='".substr($d['enter_time'], 0, 16)."'";
 		$replace["name='stop'"] = "name='stop' value='".substr($d['exit_time'], 0, 16)."'";
@@ -516,8 +824,9 @@ if (isset($_REQUEST['login'])) {
 		$replace['<!--dosimeter_value-->'] = $d['dosimeter_value']>0? $d['dosimeter_value']: '';
 		$replace['<!--dosimeter_exitvalue-->'] = $d['dosimeter_exitvalue']>0? $d['dosimeter_exitvalue']: '';
 		$replace['<!--token-->'] = $d['token']=='-1'? 'cancellato': '';
+		$replace['changeElement'] = 'console.log';
 		// $replace["<input type='submit' name='insert' value='salva'"] = "<input type='submit' name='update_save' value='modifica' onClick=\"validate_backoffice('$machine');return false;\">&nbsp;<input type='submit' name='delete' value='elimina'>&nbsp;<input type='submit' name='exit' value='esci'><input type='hidden' name='id' value='{$d['id']}'";
-		$replace["<input type='submit' name='insert' value='salva'"] = "<input type='submit' name='update_save' value='modifica' onClick=\"validate_backoffice('$machine');\">&nbsp;<input type='submit' name='delete' value='elimina'>&nbsp;<input type='submit' name='exit' value='esci'><input type='hidden' name='id' value='{$d['id']}'";
+		$replace["<input type='submit' name='insert' value='salva'"] = "<input type='hidden' name='goto_page' value='{$_REQUEST['goto_page']}'><input type='submit' name='update_save' value='modifica' onClick=\"validate_backoffice('$machine');\">&nbsp;<input type='submit' name='delete' value='elimina'>&nbsp;<input type='submit' name='exit' value='esci'><input type='hidden' name='id' value='{$d['id']}'";
 		echo strtr($template[0], $replace)."{$template[2]}<br><br><br><br><br>";
 		exit();
 	}
@@ -548,7 +857,7 @@ if (isset($_REQUEST['login'])) {
 		$logquery = "INSERT INTO access_{$machine}_log (access_{$machine}_id,action_time,from_ip, query) VALUES (".quote_smart($_REQUEST['id']).",NOW(),'{$_SERVER["REMOTE_ADDR"]}',".quote_smart(strtr($query,array("'"=>'&#39;','"'=>'&quot;'))).")";
 		$res = $sql->sql_query($logquery);
 		if (!$res) {printf("$logquery;<br>\nErrormessage: %s\n", $sql->sql_error());exit();}
-		header("location: ./register.php?machine=$machine&backoffice");
+		header("location: ./register.php?machine=$machine&backoffice".$_REQUEST['goto_page']);
 		exit();
 	}
 
@@ -562,6 +871,10 @@ if (isset($_REQUEST['login'])) {
 	}
 	if (in_array($remote_ip, $master_ip+$backoffice_ip)) {
 		if (isset($_REQUEST['backoffice'])) {
+			$goto_page = '';
+			if (isset($_REQUEST['checkDosimeter'])) {
+				checkDosimeter();
+			}
 			if (isset($_REQUEST['statistics'])) {
 				show_statistics();
 			}
@@ -580,14 +893,23 @@ if (isset($_REQUEST['login'])) {
 			if (isset($_REQUEST['update_save'])) {
 				update_save_backoffice();
 			}
-			$form = "<form class='form-inline' enctype='multipart/form-data' action='?backoffice&load_csv' method='post'><table><tr><td>dati storici&nbsp;&nbsp;</td><td><input id='f' type='file' name='userfile' length='40'></td><td><input type='submit' name='download' value='Carica file CSV'></td></tr></table></form><br>";
-			$err_msg = show_anomalies(date('z')+1);
+			$year = isset($_REQUEST['year'])? $_REQUEST['year']-0: date('Y');
+			$form = "<form class='form-inline' enctype='multipart/form-data' action='?backoffice&load_csv' method='post'><table><tr><td>dati storici&nbsp;&nbsp;</td><td><input id='f' type='file' name='userfile' length='40'></td>
+			<td><input type='submit' name='download' value='Carica file CSV'></td><td>&nbsp;&nbsp;&nbsp;
+			<a href='?backoffice&statistics=$year'>statistiche</a>&nbsp;&nbsp;&nbsp;
+			<a href='?backoffice&anomalies&year=$year'>anomalie</a>&nbsp;&nbsp;&nbsp;
+			<a href='?backoffice&database&year=$year'>storico operazioni</a></td></tr></table></form><br>";
+			$err_msg = (isset($_REQUEST['show_details']) || (isset($_REQUEST['anomalies']) && !isset($_REQUEST['user']) && !isset($_REQUEST['dosimeter'])))? show_anomalies(date('z')+1): '';
 			$template = explode('<!--item-->', file_get_contents("register_backoffice_$machine.html"));
 			$cond = '1=1';
-			if (isset($_REQUEST['user'])) $cond = "name LIKE '%".quote_smart($_REQUEST['user'], '')."%'";
-			if (isset($_REQUEST['year'])) $cond .= " AND enter_time >= '".($_REQUEST['year']-0)."-01-01' AND exit_time < '".($_REQUEST['year']+1)."-01-01'";
-			$data = $sql->sql_select("*", "access_$machine", "$cond ORDER BY enter_time DESC LIMIT 1000", isset($_REQUEST['debug'])? 1: 0);
-			if (!$data) {sql_debug("*", "access_$machine", "$cond ORDER BY enter_time DESC LIMIT 1000"); echo ";<br>\n".$sql->sql_error(); exit();}
+			$prevyy = $year > 2012? "<a href='./register.php?backoffice&year=".($year-1)."'>&lt;</a> ": '';
+			$nextyy = $year < date('Y')? " <a href='./register.php?backoffice&year=".($year+1)."'>&gt;</a>": '';
+			$form = "<b>$prevyy$year$nextyy</b>$form";
+			if (isset($_REQUEST['user'])) {$usr = explode('.', quote_smart($_REQUEST['user'], '')); $cond = "(name LIKE '%".quote_smart($_REQUEST['user'], '')."%' OR name LIKE '%{$usr[1]}_{$usr[0]}%')"; $goto_page .= '&user='.$_REQUEST['user'];}
+			/*if (isset($_REQUEST['year']))*/ {$cond .= " AND enter_time >= '$year-01-01' AND exit_time < '".($year+1)."-01-01'"; $goto_page .= '&year='.$year;}
+			if (isset($_REQUEST['dosimeter'])) {$cond .= " AND dosimeter_number = ".quote_smart($_REQUEST['dosimeter']); $goto_page .= '&dosimeter='.$_REQUEST['dosimeter'];}
+			$data = $sql->sql_select("*", "access_$machine", "$cond ORDER BY enter_time DESC", isset($_REQUEST['mainquery_debug'])? 1: 0);
+			if (!$data) {sql_debug("*", "access_$machine", "$cond ORDER BY enter_time DESC"); echo ";<br>\n".$sql->sql_error(); exit();}
 			$items = '';
 			foreach ($data as $row) {
 				foreach ($row as $k=>$v) $replace["<!--$k-->"] = $v;
@@ -597,16 +919,24 @@ if (isset($_REQUEST['login'])) {
 				$replace['<!--badge-->'] = strtr($replace['<!--badge_type-->'], array('personal'=>'Personale','host'=>'Ospite '.$replace['<!--badge_number-->'],'search'=>'Ronda '.$replace['<!--badge_number-->']));
 				$replace['<!--dosimeter-->'] = strtr($replace['<!--dosimeter_type-->'], array('personal'=>'Personale','host'=>'Ospite '.$replace['<!--dosimeter_number-->'],'personal_host'=>'Personale + Ospite '.$replace['<!--dosimeter_number-->']));
 				$replace['<!--dosimeter_value-->'] = $replace['<!--dosimeter_value-->']=='0'? '': 'IN: '.$replace['<!--dosimeter_value-->'].($replace['<!--dosimeter_exitvalue-->']=='0'? '': ', OUT: '.$replace['<!--dosimeter_exitvalue-->']);
-				$replace['<!--token-->'] = $replace['<!--token-->']=='-1'? 'cancellato': ''; // $replace['<!--token-->'];
+				$replace['<!--token-->'] = ($replace['<!--token-->']=='-1'? 'cancellato': '')."<input type='hidden' name='goto_page' value='$goto_page'>"; // $replace['<!--token-->'];
 				$items .= strtr($template[1], $replace);
 			}
-			$replace = array("<h1>FERMI</h1>"=>"<h1>FERMI</h1>$form$err_msg","<h1>ELETTRA</h1>"=>"<h1>ELETTRA</h1>$form$err_msg", '<!--badge_personal-->'=>'', '<!--badge_host-->'=>'', '<!--badge_search-->'=>'', '<!--badge_id-->'=>'', '<!--dosimeter_personal-->'=>'', '<!--dosimeter_host-->'=>'', '<!--dosimeter_personal_host-->'=>'','<!--dosimeter_id-->'=>'','<!--dosimeter_value-->'=>'','<!--dosimeter_exitvalue-->'=>'');
-			foreach ($place as $p) {
-				$replace["<!--place_$p-->"] = '';
+			if (isset($_REQUEST['anomalies'])) {
+				echo "$err_msg";
 			}
-			echo strtr($template[0], $replace)."$items{$template[2]}$jsSearch<br><br><br><br><br><h1>Ultime operazioni</h1>";
-			$data = $sql->sql_select("*", "access_{$machine}_log", "1=1 ORDER BY action_time DESC LIMIT 500");
-			debug($data);
+			if (!isset($_REQUEST['database']) && !isset($_REQUEST['anomalies'])) {
+				$replace = array("<h1>FERMI</h1>"=>"<h1>FERMI</h1>$form$err_msg","<h1>ELETTRA</h1>"=>"<h1>ELETTRA</h1>$form$err_msg", '<!--badge_personal-->'=>'', '<!--badge_host-->'=>'', '<!--badge_search-->'=>'', '<!--badge_id-->'=>'', '<!--dosimeter_personal-->'=>'', '<!--dosimeter_host-->'=>'', '<!--dosimeter_personal_host-->'=>'','<!--dosimeter_id-->'=>'','<!--dosimeter_value-->'=>'','<!--dosimeter_exitvalue-->'=>'');
+				foreach ($place as $p) {
+					$replace["<!--place_$p-->"] = '';
+				}
+				echo strtr($template[0], $replace)."$items{$template[2]}";
+			}
+			if (isset($_REQUEST['database'])) {
+				echo "<h1>Operazioni sul database nell'anno $year</h1>";
+				$data = $sql->sql_select("*", "access_{$machine}_log", "action_time >= '$year-01-01' AND action_time < '".($year+1)."-01-01' ORDER BY action_time DESC");
+				debug($data);
+			}
 			exit();
 		}
 	}
@@ -673,6 +1003,12 @@ if (isset($_REQUEST['login'])) {
 		$cond = ($dbtype=="pg")? "exit_time IS NULL AND EXTRACT(EPOCH FROM current_timestamp-enter_time)>86400": "ISNULL(exit_time) AND TIME_TO_SEC(TIMEDIFF(NOW(),enter_time))>86400";
 		$data = $sql->sql_select("*", "access_$machine", "token>0 AND $cond", isset($_REQUEST['debug2'])? 1: 0);
 		$yy = date("Y");
+		$firstdate = $dbfirstdate = time()-86400*$days;
+		if (isset($_REQUEST['year'])) {
+			$yy = $_REQUEST['year']-0;
+			$firstdate = strtotime(($_REQUEST['year']-0)."-01-01 00:00:00")." AND plc_time<".strtotime(($_REQUEST['year']+1)."-01-01 00:00:00");
+			$dbfirstdate = strtotime(($_REQUEST['year']-0)."-01-01 00:00:00")." AND db_time<".strtotime(($_REQUEST['year']+1)."-01-01 00:00:00");
+		}
 		if (isset($_REQUEST['debug3'])) debug($data, "data");
 		if (isset($_REQUEST['debug2'])) debug(count($data), "count(data)");
 		$orderby = isset($_REQUEST['orderby'])? $_REQUEST['orderby']: 'date';
@@ -702,7 +1038,6 @@ if (isset($_REQUEST['login'])) {
 			$err_msg[$key] = (isset($_REQUEST['backoffice'])? "<a href=\"mailto:{$row['name']}@elettra.eu?subject=Anomalia registrazione accesso&body=$msg_body\">{$row['name']}</a>": $row['name'])." in macchina da oltre 24 ore, entrata dichiarata alle {$row['enter_time']}, uscita rilevata alle {$doordata[0]['db_time']}\n";
 		}
 		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') {
-			$firstdate = time()-86400*$days;
 			if ($machine=='fermi') {
 				$doordata = $sql->sql_select("CONCAT(FROM_UNIXTIME(plc_time),SUBSTR(MOD(plc_time,1),2)) AS t, CONCAT(FROM_UNIXTIME(db_time),SUBSTR(MOD(db_time,1),2)) AS db_time, 'L' AS machine, position, present, name, time_id", "linac_db50_$yy, enabled_user, linac_time_$yy", "position<16 AND plc_time>$firstdate AND enabled_user.id=enabled_user_id AND time_id=linac_time_$yy.id"
 					." UNION ". 
@@ -757,7 +1092,7 @@ if (isset($_REQUEST['login'])) {
 					}
 				}
 				if (isset($_REQUEST['debug4'])) debug(count($doordata), 'data');
-				$doordata_sr = $sql2->sql_select("*", "sr_db50_$yy, enabled_user, sr_time_$yy", "position<16 AND db_time>=$firstdate AND enabled_user.id=enabled_user_id AND time_id=sr_time_$yy.id ORDER BY time_id", isset($_REQUEST['debug5'])? 1: 0);
+				$doordata_sr = $sql2->sql_select("*", "sr_db50_$yy, enabled_user, sr_time_$yy", "position<16 AND db_time>=$dbfirstdate AND enabled_user.id=enabled_user_id AND time_id=sr_time_$yy.id ORDER BY time_id", isset($_REQUEST['debug5'])? 1: 0);
 				$sr = array();
 				if ($doordata_sr) foreach ($doordata_sr as $d) {
 					$name = $d['name']; // detect_name($d['name']);
@@ -770,7 +1105,7 @@ if (isset($_REQUEST['login'])) {
 					}
 				}
 				if (isset($_REQUEST['debug7'])) debug($sr, 'sr');
-				$doordata_bo = $sql3->sql_select("*", "booster_db50_$yy, enabled_user, booster_time_$yy", "position<16 AND db_time>=$firstdate AND enabled_user.id=enabled_user_id AND time_id=booster_time_$yy.id ORDER BY time_id", isset($_REQUEST['debug5'])? 1: 0);
+				$doordata_bo = $sql3->sql_select("*", "booster_db50_$yy, enabled_user, booster_time_$yy", "position<16 AND db_time>=$dbfirstdate AND enabled_user.id=enabled_user_id AND time_id=booster_time_$yy.id ORDER BY time_id", isset($_REQUEST['debug5'])? 1: 0);
 				$bo = array();
 				if ($doordata_bo) foreach ($doordata_bo as $d) {
 					$name = $d['name']; // detect_name($d['name']);
@@ -826,7 +1161,7 @@ if (isset($_REQUEST['login'])) {
 		}
 		$msg = '';
 		if ($reverse) krsort($err_msg); else ksort($err_msg);
-		if (count($err_msg)) $msg = "<b>Lista anomalie</b>".(isset($_REQUEST['backoffice'])? "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href='?backoffice&orderby=name&reverse=true' title='ordina per cognome decrescente'>&lt;</a> nome <a href='?backoffice&orderby=name&reverse=false' title='ordina per cognome crescente'>&gt;</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href='?backoffice&orderby=date&reverse=true' title='ordina per data decrescente'>&lt;</a> data <a href='?backoffice&orderby=date&reverse=false' title='ordina per data crescente'>&gt;</a>\n<pre>".implode('', $err_msg)."</pre>\n": "<br>\n<textarea rows='3' cols='140'>".implode('', $err_msg)."</textarea>\n");
+		if (count($err_msg)) $msg = "<b>Lista anomalie</b>".(isset($_REQUEST['anomalies'])? "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href='?backoffice&anomalies&year=$yy&orderby=name&reverse=true' title='ordina per cognome decrescente'>&lt;</a> nome <a href='?backoffice&anomalies&year=$yy&orderby=name&reverse=false' title='ordina per cognome crescente'>&gt;</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href='?backoffice&anomalies&year=$yy&orderby=date&reverse=true' title='ordina per data decrescente'>&lt;</a> data <a href='?backoffice&anomalies&year=$yy&orderby=date&reverse=false' title='ordina per data crescente'>&gt;</a>\n<pre>".implode('', $err_msg)."</pre>\n": "<br>\n<textarea rows='3' cols='140'>".implode('', $err_msg)."</textarea>\n");
 		$t = time() - $t0;
 		echo "\n<!--\n show_anomalies() t: $t\n-->\n";
 		return strtr($msg, array("alle  ma risulta"=>"; ma risulta"));
@@ -954,13 +1289,17 @@ if (isset($_REQUEST['login'])) {
 			$query = "INSERT INTO access_$machine (".implode(',', array_keys($param)).") VALUES (".implode(',', $param).")";
 			$res = $sql->sql_query($query);
 			if (!$res) {
-				printf("$query;<br>\nErrormessage: %s\n", $sql->sql_error());
+				die("ATTENZIONE<br>\nservizio non disponibile<br>\ne' OBBLIGATORIO usare il registro cartaceo<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>$query;<br>\nError message: ". $sql->sql_error());
 			}
 			$id = $sql->last_insert_id();
 			$logquery = "INSERT INTO access_{$machine}_log (access_{$machine}_id,action_time,from_ip, query) VALUES ($id,NOW(),'{$_SERVER["REMOTE_ADDR"]}',".quote_smart(strtr($query,array("'"=>'&#39;','"'=>'&quot;'))).")";
 			$res = $sql->sql_query($logquery);
 			if (!$res) {printf("$logquery;<br>\nErrormessage: %s\n", $sql->sql_error());exit();}
-			if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') $res = file("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['start'])."&name={$_REQUEST["name_$i"]}&place=".trim($param['place'],"'")."&note=".urlencode($_REQUEST['note'])."&exit=false");
+			if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') {
+				$txt = "http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['start'])."&name={$_REQUEST["name_$i"]}&place=".trim($param['place'],"'")."&note=".urlencode($_REQUEST['note'])."&exit=false";
+				$res = file($txt);
+				file_put_contents('./enter.log', $txt.PHP_EOL , FILE_APPEND | LOCK_EX);
+			}
 		}
 		header("location: ./register.php?machine=$machine".(strlen($err_msg)? "&msg=$err_msg": ''));
 		exit();
@@ -1040,7 +1379,7 @@ if (isset($_REQUEST['login'])) {
 		$query = "UPDATE access_$machine SET token=-1 WHERE id=$id";
 		$sql->sql_query($query);
 		if ($sql->sql_error()) {
-			printf("$query;<br>\nErrormessage: %s\n", $sql->sql_error());exit();
+			die("ATTENZIONE<br>\nservizio non disponibile<br>\ne' OBBLIGATORIO usare il registro cartaceo<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>$query;<br>\nError message: ". $sql->sql_error());
 		}
 		$logquery = "INSERT INTO access_{$machine}_log (access_{$machine}_id,action_time,from_ip, query) VALUES ($id,NOW(),'{$_SERVER["REMOTE_ADDR"]}',".quote_smart(strtr($query,array("'"=>'&#39;','"'=>'&quot;'))).")";
 		$res = $sql->sql_query($logquery);
@@ -1068,7 +1407,9 @@ if (isset($_REQUEST['login'])) {
 		if (strlen($_REQUEST['note'])) {$param[] = 'note='.quote_smart($_REQUEST['note']);}
 		$query = "UPDATE access_$machine SET ".implode(',', $param)." WHERE token=".quote_smart($_REQUEST['token']);
 		$res = $sql->sql_query($query);
-		if (!$res) {printf("$query;<br>\nErrormessage: %s\n", $sql->sql_error());exit();}
+		if (!$res) {
+			die("ATTENZIONE<br>\nservizio non disponibile<br>\ne' OBBLIGATORIO usare il registro cartaceo<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>$query;<br>\nError message: ". $sql->sql_error());
+		}
 		$logquery = "INSERT INTO access_{$machine}_log (access_{$machine}_id,action_time,from_ip, query) VALUES ((SELECT id FROM access_$machine WHERE token=".quote_smart($_REQUEST['token'])."),NOW(),'{$_SERVER["REMOTE_ADDR"]}',".quote_smart(strtr($query,array("'"=>'&#39;','"'=>'&quot;'))).")";
 		$res = $sql->sql_query($logquery);
 		// if (!$res) {printf("$logquery;<br>\nErrormessage: %s\n", $sql->sql_error());exit();}
@@ -1102,7 +1443,14 @@ if (isset($_REQUEST['login'])) {
 		$logquery = "INSERT INTO access_{$machine}_log (access_{$machine}_id,action_time,from_ip, query) VALUES ($id,NOW(),'{$_SERVER["REMOTE_ADDR"]}',".quote_smart(strtr($query,array("'"=>'&#39;','"'=>'&quot;'))).")";
 		$res = $sql->sql_query($logquery);
 		// if (!$res) {printf("$logquery;<br>\nErrormessage: %s\n", $sql->sql_error());exit();}
-		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') $res = file("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['start'])."&name={$_REQUEST['name']}&place=".trim($param['place'],"'")."&note=".urlencode($_REQUEST['note'])."&exit=false");
+		$replaceArray = array('delnegro'=>'Del+Negro');
+		if (strpos($_REQUEST['name'],'.')===false) $replaceArray[' '] = '.';
+		$uname = strtr($_REQUEST['name'], $replaceArray);
+		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') {
+			$txt = "http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['start'])."&name=$uname&place=".trim($param['place'],"'")."&note=".urlencode($_REQUEST['note'])."&exit=false";
+			$res = file($txt);
+			file_put_contents('./enter.log', $txt.PHP_EOL , FILE_APPEND | LOCK_EX);
+		}
 		else die("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['start'])."&name={$_REQUEST['name']}&place=".trim($param['place'],"'")."&exit=false");
 		header("location: ./register.php?machine=$machine");
 		exit();
@@ -1114,9 +1462,8 @@ if (isset($_REQUEST['login'])) {
 		$query = "UPDATE access_$machine SET exit_time=".($dbtype=="pg"? 'TIMESTAMP ':'')."'".trim(quote_smart($_REQUEST['stop']),"'").":00',dosimeter_exitvalue=$exitvalue WHERE token=".quote_smart($_REQUEST['token']);
 		$sql->sql_query($query);
 		if ($sql->sql_error()) {
-			debug($_REQUEST);
-			debug(quote_smart($_REQUEST["stop"].':00'));
-			printf("$query;<br>\nErrormessage: %s\n", $sql->sql_error()); exit();
+			echo "<!--\n"; debug($_REQUEST); debug(quote_smart($_REQUEST["stop"].':00'));echo "\n-->\n"; 
+			die("ATTENZIONE<br>\nservizio non disponibile<br>\ne' OBBLIGATORIO usare il registro cartaceo<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>$query;<br>\nError message: ". $sql->sql_error());
 		}
 		$data = $sql->sql_select("id", "access_{$machine}", "token=".quote_smart($_REQUEST['token']));
 		$logquery = "INSERT INTO access_{$machine}_log (access_{$machine}_id,action_time,from_ip, query) VALUES ({$data[0]['id']},NOW(),'{$_SERVER["REMOTE_ADDR"]}',".quote_smart(strtr($query,array("'"=>'&#39;','"'=>'&quot;'))).")";
@@ -1124,7 +1471,14 @@ if (isset($_REQUEST['login'])) {
 		// if (!$res) {printf("$logquery;<br>\nErrormessage: %s\n", $sql->sql_error());exit();}
 		$data = $sql->sql_select("name,place", "access_$machine", "token=".quote_smart($_REQUEST['token']));
 		$row = $data[0];
-		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') $res = file("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['stop'])."&name={$row['name']}&place={$row['place']}&exit=true");
+		$replaceArray = array('delnegro'=>'Del+Negro');
+		if (strpos($row['name'],'.')===false) $replaceArray[' '] = '.';
+		$uname = strtr($row['name'], $replaceArray);
+		if ($_SERVER['REMOTE_ADDR'] != '127.0.0.1') {
+			$txt = "http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['stop'])."&name=$uname&place={$row['place']}&exit=true";
+			$res = file($txt);
+			file_put_contents('./enter.log', $txt.PHP_EOL , FILE_APPEND | LOCK_EX);
+		}
 		// else die("http://{$elog}/InsertTextAccessi.php?date=".urlencode($_REQUEST['stop'])."&name={$row['name']}&place={$row['place']}&exit=true");
 		header("location: ./register.php?machine=$machine");
 		exit();
@@ -1145,7 +1499,8 @@ if (isset($_REQUEST['login'])) {
 	if (isset($_REQUEST['msg'])) echo "<pre>{$_REQUEST['msg']}</pre>\n";
 
 	$template = explode('<!--item-->', file_get_contents("register_$machine.html"));
-	$items_outdoor = strtr($template[0], array('<!--start-->'=>'','<!--name-->'=>'','<!--note-->'=>'','<!--anomalies-->'=>show_anomalies(),'<!--operators-->'=>findOperators(),
+	$anomalies = (isset($_REQUEST['show_details']) || isset($_REQUEST['backoffice']))? show_anomalies(): "<a href='?show_details'>maggiori dettagli</a> (anomalie e storico)<br>";
+	$items_outdoor = strtr($template[0], array('<!--start-->'=>'','<!--name-->'=>'','<!--note-->'=>'','<!--anomalies-->'=>$anomalies,'<!--operators-->'=>findOperators(),
 											'<!--place_psa-->'=>'','<!--place_bo-->'=>'','<!--place_sa-->'=>'','<!--place_ring-->'=>'','<!--place_linac-->'=>'','<!--place_uh-->'=>'','<!--place_linacuh-->'=>'','<!--place_kgzc-->'=>'',
 											'<!--badge_personal-->'=>'','<!--badge_host-->'=>'','<!--badge_search-->'=>'','<!--badge_id-->'=>'',
 											'<!--dosimeter_personal-->'=>'','<!--dosimeter_host-->'=>'','<!--dosimeter_personal_host-->'=>'','<!--dosimeter_id-->'=>'','<!--dosimeter_value-->'=>''
@@ -1172,7 +1527,7 @@ if (isset($_REQUEST['login'])) {
 	}
 	$keys = array('<!--start-->', '<!--name-->', '<!--place-->', '<!--note-->', '<!--badge-->', '<!--badge_id-->', '<!--dosimeter-->', '<!--dosimeter_id-->', '<!--dosimeter_value-->', '<!--stop-->');
 	$items = '';
-	$data = $sql->sql_select("*", "access_$machine", "token>=0 AND NOT $is_null_exit_time ORDER BY enter_time DESC LIMIT 500");
+	$data = $sql->sql_select("*", "access_$machine", "token>=0 AND NOT $is_null_exit_time ORDER BY enter_time DESC LIMIT ".((isset($_REQUEST['show_details']) || isset($_REQUEST['backoffice']))? 1500: 30));
 	// $stmt = $sql->sql_prepare("SELECT * FROM access_$machine WHERE token>=? AND NOT $is_null_exit_time ORDER BY enter_time DESC LIMIT 500");
 	// $params = array($stmt, "i", 0);
 	// $stmt = $sql->sql_prepare("SELECT * FROM access_$machine WHERE token>=$1 AND NOT $is_null_exit_time ORDER BY enter_time DESC LIMIT 500", "q1");
@@ -1180,7 +1535,9 @@ if (isset($_REQUEST['login'])) {
 	// $data = $sql->sql_execute($params, "q1");
 	if (!empty($data)) foreach ($data as $row) {
 		$replace['<!--start-->'] = substr($row['enter_time'],0,16);
+		if (strlen($row['signed_by'])>0) $replace['<!--start-->'] .= "<br>{$row['signed_by']}";
 		$replace['<!--stop-->'] = substr($row['exit_time'],0,16);
+		if (strlen($row['exitsigned_by'])>0) $replace['<!--stop-->'] .= "<br>{$row['exitsigned_by']}";
 		$replace['<!--name-->'] = $row['name'];
 		$replace['<!--note-->'] = $row['note'];
 		$replace['<!--place-->'] = strtr($row['place'], array('psa'=>'PSA','bo'=>'Booster','sa'=>'Service Area','ring'=>'Storage Ring','linac'=>'Linac','uh'=>'Sala Ondulatori','linacuh'=>'Linac + Sala Ond.','kgzc'=>"KG zone controllate"));
