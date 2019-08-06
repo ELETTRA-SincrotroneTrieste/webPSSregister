@@ -24,8 +24,8 @@
 	<!-- Custom styles for this template -->
 	<link href="./lib/bootstrap/css/theme.css" rel="stylesheet">
 
-	<!-- Custom styles for this template -- >
-	<link href="starter-template.css" rel="stylesheet">
+	<!-- Custom styles for this template -->
+	<link href="./pss.css" rel="stylesheet">
 
 	<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
 	<!--[if lt IE 9]>
@@ -82,7 +82,8 @@
 <form method='post' action='./register.php' id='form_input'>
 <tr>
 	<td><input type='text' name='start' id='start' size='20' id='start' value='<!--start-->' placeholder='YYYY-MM-DD hh:mm' onClick="if (document.getElementById('start').value.length==0) mydate('start', '#save')" required>&nbsp;<span class="glyphicon glyphicon-time" onClick="mydate('start', '#save')"></span> </td>
-	<td><input type='text' class='username' name='name' id='name' value='<!--name-->' size='20' placeholder='nome.cognome' onChange="changeElement('name', '#save')" required></td>
+	<td><input type='text' class='username' name='name' id='name' value='<!--name-->' size='20' placeholder='nome.cognome' onChange="changeUser()" required>
+		<span id='operatorList' style='display:none;'><br>operatore:&nbsp;<select name='operator' id='operator'><option value=''></option><!--operators--></select></span></td>
 	<!--td><select name='place' id='place' onChange="changeElement('place', '#save')" required><option value=''></option><option value='psa'<!--place_psa-- >>PSA</option><option value='booster'<!--place_booster-- >>Tunnel Booster</option><option value='RSA'<!--place_rsa-- >>S.A. Anello</option><option value='ring'<!--place_ring-- >>Tunnel Anello</option></select></td-->
 	<td><table>
 		<tr><td title="PreInjector Service Area"><input type='checkbox' name='place_psa' id='place_psa' onChange="changeElement('place_psa', '#save')"<!--place_psa-->>&nbsp;<b>PSA</b></td></tr>
@@ -129,7 +130,7 @@
 	<td><!--dosimeter_value--></td>
 	<td><input type='text' name='stop' id='stop_<!--token-->' size='20' placeholder='YYYY-MM-DD hh:mm' onClick="if (document.getElementById('stop_<!--token-->').value.length==0) mydate('stop_<!--token-->', '#save_<!--token-->')" required>&nbsp;<span class="glyphicon glyphicon-time" onClick="mydate('stop_<!--token-->', '#save_<!--token-->')"></span></td>
 	<td>
-	  <button id='save_<!--token-->' class="btn btn-lg btn-primary" type="submit" onClick='open_validation("<!--name-->", "<!--token-->");return false;'>salva</button>
+	  <button id='save_<!--token-->' class="btn btn-lg btn-primary" type="submit" onClick='open_validation("<!--agent-->", "<!--token-->");return false;'>salva</button>
 	  <input type='hidden' name='exit' value='salva'><input type='hidden' id='start_<!--token-->' value='<!--start-->'><input type='hidden' name='token' value='<!--token-->'><input type='hidden' id='confirm_<!--token-->' name='confirm' value='NO'>
 	  <button id='modify_<!--token-->' class="btn btn-lg btn-primary" type="submit" onClick='open_edit("<!--token-->");return false;'>modifica/elimina</button>
 	</td>
