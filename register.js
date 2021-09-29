@@ -1,4 +1,5 @@
-	var loginService = document.domain=='localhost'||document.domain=='127.0.0.1'? './pss_login.php': 'https://www.elettra.eu/service/pss/pss_login.php';
+	// var loginService = document.domain=='localhost'||document.domain=='127.0.0.1'? './pss_login.php': 'https://www.elettra.eu/service/pss/pss_login.php';
+	var loginService = document.domain=='localhost'||document.domain=='127.0.0.1'? './pss_login.php': 'https://pwma.elettra.eu/lib/ldap/pss_login.php';
 
 	document.domain = document.domain=='localhost'||document.domain=='127.0.0.1'? document.domain: 'elettra.eu';
 
@@ -23,7 +24,7 @@
 	function changeUser(id, value) {
 		const myid = ((typeof id !== "undefined") && (id!==''))? '_'+id: '';
 		const name = (typeof value !== "undefined")? value: document.getElementById('name'+myid).value;
-		// console.log('myid', myid); console.log('name', name);
+		console.log('changeUser(), myid', myid, 'name', name, hostList[name]);
 		if (name.indexOf('.')===-1 && name!='') {
 			if (typeof myid !== "undefined" && document.getElementById('operatorList'+myid)) document.getElementById('operatorList'+myid).style.display = 'block';
 			if (typeof hostList[name] !== "undefined") document.getElementById('name'+myid).value = hostList[name];
@@ -68,7 +69,8 @@
 
 	function receiveMessage(e) {
 		var origin = e.origin || e.originalEvent.origin;
-		if (origin=='https://www.elettra.eu') document.getElementById(e.data).submit();
+		// if (origin=='https://www.elettra.eu') document.getElementById(e.data).submit();
+		if (origin=='https://pwma.elettra.eu') document.getElementById(e.data).submit();
 	}	
 
 	window.addEventListener("message", receiveMessage, false);
@@ -174,42 +176,43 @@ console.log('ok');
 
 	function validate_backoffice(machine) {
 console.log('validate_backoffice');
-		if (document.getElementById('start').value.length==0) {alert("ERRORE!\nOrario d'ingresso mancante"); return;}
+		if (document.getElementById('start').value.length==0) {alert("ERRORE!\nOrario d'ingresso mancante"); return false;}
 		var currentdate = new Date(); 
 console.log(currentdate);
 		var start = myDate(document.getElementById('start').value);
 console.log('start: '+start);
-		if (start=='Invalid Date') {alert("ERRORE!\nOrario d'ingresso non valido"); return;}
-		if ((currentdate - start)/1000 > 3653*86400) {alert("ERRORE!\nOrario d'ingresso piu' di 10 anni nel passato"); return;}
-		if ((currentdate - start)/1000 < -3700) {alert("ERRORE!\nOrario d'ingresso nel futuro"); return;}
-		if (document.getElementById('name').value.length==0) {alert("ERRORE!\nUsername mancante"); return;}
-		// if (typeof(userList) !== 'undefined' && userList.indexOf(document.getElementById('name').value)==-1) {alert("ERRORE!\nUsername non valido"); return;}
-		if (typeof(entered) !== 'undefined' && entered.indexOf(document.getElementById('name').value) != -1) {alert("ERRORE!\nOperatore gia' registrato all'interno di una zona controllata"); return;}
+		if (start=='Invalid Date') {alert("ERRORE!\nOrario d'ingresso non valido"); return false;}
+		if ((currentdate - start)/1000 > 3653*86400) {alert("ERRORE!\nOrario d'ingresso piu' di 10 anni nel passato"); return false;}
+		if ((currentdate - start)/1000 < -3700) {alert("ERRORE!\nOrario d'ingresso nel futuro"); return false;}
+		if (document.getElementById('name').value.length==0) {alert("ERRORE!\nUsername mancante"); return false;}
+		// if (typeof(userList) !== 'undefined' && userList.indexOf(document.getElementById('name').value)==-1) {alert("ERRORE!\nUsername non valido"); return false;}
+		if (typeof(entered) !== 'undefined' && entered.indexOf(document.getElementById('name').value) != -1) {alert("ERRORE!\nOperatore gia' registrato all'interno di una zona controllata"); return false;}
 		if (machine=='elettra') {
-			if (!(document.getElementById('place_psa').checked || document.getElementById('place_bo').checked || document.getElementById('place_ring').checked || document.getElementById('place_sa').checked)) {alert("ERRORE!\nLuogo di intervento mancante"); return;}
+			if (!(document.getElementById('place_psa').checked || document.getElementById('place_bo').checked || document.getElementById('place_ring').checked || document.getElementById('place_sa').checked)) {alert("ERRORE!\nLuogo di intervento mancante"); return false;}
 		}
 		if (machine=='fermi') {
-			if (!(document.getElementById('place_linac').checked || document.getElementById('place_uh').checked || document.getElementById('place_kgzc').checked)) {alert("ERRORE!\nLuogo di intervento mancante"); return;}
+			if (!(document.getElementById('place_linac').checked || document.getElementById('place_uh').checked || document.getElementById('place_kgzc').checked)) {alert("ERRORE!\nLuogo di intervento mancante"); return false;}
 		}
-		if (document.getElementById('badge').value.length==0) {alert("ERRORE!\nBadge mancante"); return;}
-		if (document.getElementById('badge').value!='personal' && document.getElementById('badge_id').value.length==0) {alert("ERRORE!\nNumero di badge ospite o ronda mancante"); return;}
+		if (document.getElementById('badge').value.length==0) {alert("ERRORE!\nBadge mancante"); return false;}
+		if (document.getElementById('badge').value!='personal' && document.getElementById('badge_id').value.length==0) {alert("ERRORE!\nNumero di badge ospite o ronda mancante"); return false;}
 		if (document.getElementById('badge').value=='personal' && typeof(dosimeteredUser) !== 'undefined' && dosimeteredUser.indexOf(document.getElementById('name').value)==-1) {alert("ATTENZIONE!\nUsername: "+document.getElementById('name').value+" non risulta essere dotato di badge personale");}
-		// if (badge[document.getElementById('badge_id').value]) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del badge ospite"); if (r != true) return;}
-		if (document.getElementById('dosimeter').value.length==0) {alert("ERRORE!\nDosimetro mancante"); return;}
-		if (document.getElementById('dosimeter').value!='personal' && document.getElementById('dosimeter_id').value.length==0) {alert("ERRORE!\nNumero di dosimetro ospite mancante"); return;}
-		if (document.getElementById('dosimeter').value!='personal' && document.getElementById('dosimeter_value').value.length==0) {alert("ERRORE!\nLettura dosimetro ospite mancante"); return;}
+		// if (badge[document.getElementById('badge_id').value]) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del badge ospite"); if (r != true) return false;}
+		if (document.getElementById('dosimeter').value.length==0) {alert("ERRORE!\nDosimetro mancante"); return false;}
+		if (document.getElementById('dosimeter').value!='personal' && document.getElementById('dosimeter_id').value.length==0) {alert("ERRORE!\nNumero di dosimetro ospite mancante"); return false;}
+		if (document.getElementById('dosimeter').value!='personal' && document.getElementById('dosimeter_value').value.length==0) {alert("ERRORE!\nLettura dosimetro ospite mancante"); return false;}
 		if (document.getElementById('dosimeter').value=='personal' && typeof(dosimeteredUser) !== 'undefined' && dosimeteredUser.indexOf(document.getElementById('name').value)==-1) {alert("ATTENZIONE!\nUsername: "+document.getElementById('name').value+" non risulta essere dotato di dosimetro personale");}
-		if (dosimeter[document.getElementById('dosimeter_id').value] && dosimeter[document.getElementById('dosimeter_id').value][2]==-1) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del dosimetro ospite"); if (r != true) return;}
+		if (dosimeter[document.getElementById('dosimeter_id').value] && dosimeter[document.getElementById('dosimeter_id').value][2]==-1) {r = confirm("ATTENZIONE!\nSi prega di ricontrollare il NUMERO del dosimetro ospite"); if (r != true) return false;}
 		var dosimeter_diff = dosimeter[document.getElementById('dosimeter_id').value]? document.getElementById('dosimeter_value').value - dosimeter[document.getElementById('dosimeter_id').value][1]: -1;
-		if (document.getElementById('dosimeter').value!='personal' && (dosimeter_diff<0 || dosimeter_diff>1)) {r = confirm("ATTENZIONE\nLettura dosimetro ospite a rischio di errore.\nSi prega di ricontrollare il NUMERO e la LETTURA del dosimetro ospite e\npremere OK solo dopo aver verificato la correttezza di entrambi i valori."); if (r != true) return;}
-		if (document.getElementById('stop').value.length==0) {alert("ERRORE!\nOrario d'uscita mancante"); return;}
+		if (document.getElementById('dosimeter').value!='personal' && (dosimeter_diff<0 || dosimeter_diff>1)) {r = confirm("ATTENZIONE\nLettura dosimetro ospite a rischio di errore.\nSi prega di ricontrollare il NUMERO e la LETTURA del dosimetro ospite e\npremere OK solo dopo aver verificato la correttezza di entrambi i valori."); if (r != true) return false;}
+		if (document.getElementById('stop').value.length==0) {alert("ERRORE!\nOrario d'uscita mancante"); return false;}
 		var stop = new Date(document.getElementById('stop').value);
 console.log('stop: '+stop);
-		if (stop=='Invalid Date') {alert("ERRORE!\nOrario d'uscita non valido"); return;}
+		if (stop=='Invalid Date') {alert("ERRORE!\nOrario d'uscita non valido"); return false;}
 console.log(document.getElementById('confirm'));
-		if (!document.getElementById('confirm')) return;
+		if (!document.getElementById('confirm')) return false;
 console.log('confirmed');
 		document.getElementById('confirm').value = 'ok';
+		return true;
 	}
 
 	function validate_del(username) {
