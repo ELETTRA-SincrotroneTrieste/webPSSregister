@@ -896,7 +896,7 @@
 		exit();
 	}
 
-	if (in_array($remote_ip, $master_ip)) {
+	if ($debug || in_array($remote_ip, $master_ip)) {
 		if (isset($_REQUEST['debuglog'])) {
 			$data = $sql->sql_select("*", "access_{$machine}_log", "1");
 			echo "\n$machine\n<pre>\n";
@@ -904,7 +904,7 @@
 			echo "\n</pre>\n";
 		}
 	}
-	if (in_array($remote_ip, $master_ip+$backoffice_ip)) {
+	if ($debug || in_array($remote_ip, $master_ip+$backoffice_ip)) {
 		if (isset($_REQUEST['backoffice'])) {
 			$goto_page = '';
 			if (isset($_REQUEST['checkDosimeter'])) {
@@ -953,7 +953,7 @@
 				$replace['<!--place_psa-->'] = strtr($replace['<!--place-->'], array('psa'=>'PSA','booster'=>'Booster','sa'=>'Service Area','ring'=>'Storage Ring','linac'=>'Linac','uh'=>'Sala Ondulatori','linacuh'=>'Linac + Sala Ond.','kgzc'=>"KG zone controllate"));
 				$replace['<!--badge-->'] = strtr($replace['<!--badge_type-->'], array('personal'=>'Personale','host'=>'Ospite '.$replace['<!--badge_number-->'],'search'=>'Ronda '.$replace['<!--badge_number-->']));
 				$replace['<!--dosimeter-->'] = strtr($replace['<!--dosimeter_type-->'], array('personal'=>'Personale','host'=>'Ospite '.$replace['<!--dosimeter_number-->'],'personal_host'=>'Personale + Ospite '.$replace['<!--dosimeter_number-->']));
-				$replace['<!--dosimeter_value-->'] = $replace['<!--dosimeter_value-->']=='0'? '': 'IN: '.$replace['<!--dosimeter_value-->'].($replace['<!--dosimeter_exitvalue-->']=='0'? '': ', OUT: '.$replace['<!--dosimeter_exitvalue-->']);
+				$replace['<!--dosimeter_value-->'] = $replace['<!--dosimeter_number-->']=='0'? '': 'IN: '.$replace['<!--dosimeter_value-->'].($replace['<!--dosimeter_number-->']=='0'? '': ', OUT: '.$replace['<!--dosimeter_exitvalue-->']);
 				$replace['<!--token-->'] = ($replace['<!--token-->']=='-1'? 'cancellato': '')."<input type='hidden' name='goto_page' value='$goto_page'>"; // $replace['<!--token-->'];
 				$items .= strtr($template[1], $replace);
 			}
@@ -976,14 +976,15 @@
 		}
 	}
 
-	if (!in_array($remote_ip, $master_ip+$controlroom_ip)) {
+	if (!$debug && !in_array($remote_ip, $master_ip+$controlroom_ip)) { 
 		session_start();
 		if (isset($_SESSION['token'])) {
 			if (file_get_contents('token.txt')!=$_SESSION['token']) {sleep(2); die("<h4>Access forbidden</h4>");}
 		}
 		else if (isset($_REQUEST['elettra_ldap_email']) and isset($_REQUEST['elettra_ldap_password'])) {
 			if (!function_exists('ldap_connect')) die("LDAP module not installed in PHP");
-			$ds=ldap_connect("abook.elettra.eu");  // must be a valid LDAP server!
+			// $ds=ldap_connect("abook.elettra.eu");  // must be a valid LDAP server!
+			$ds=ldap_connect("ldap.elettra.eu");  // must be a valid LDAP server! 
 			if (!$ds) { 
 				die("<h4>Unable to connect to LDAP server</h4>");
 			}
@@ -1263,13 +1264,14 @@
 			return array_flip(file('./users.csv', FILE_IGNORE_NEW_LINES));
 			return false;
 		}
-		$ds=ldap_connect("abook.elettra.eu");	// must be a valid LDAP server!
+		$ds=ldap_connect("ldap.elettra.eu");	// must be a valid LDAP server!
 		if (!$ds) { 
 			return false;
 		}
 		$r=ldap_bind($ds);		 // this is an "anonymous" bind, typically
 		$field = "mail";
-		$sr=ldap_search($ds, "cn=elettra.eu", "$field=$search");
+		// $sr=ldap_search($ds, "cn=elettra.eu", "$field=$search");
+		$sr=ldap_search($ds, "ou=people,dc=elettra,dc=eu", "$field=$search");
 		$info = ldap_get_entries($ds, $sr);
 		if (isset($_REQUEST['debug'])) {echo "<hr><pre>";print_r($info);echo "</pre>";exit();}
 		$data = array();
@@ -1350,12 +1352,14 @@
 
 	if (isset($_REQUEST['list'])) {
 		if (!function_exists('ldap_connect')) die("LDAP module not installed in PHP");
-		$ds=ldap_connect("abook.elettra.eu") or die("Could not connect to $ldaphost");
+		// $ds=ldap_connect("abook.elettra.eu") or die("Could not connect to $ldaphost");
+		$ds=ldap_connect("ldap.elettra.eu") or die("Could not connect to $ldaphost"); 
 		if (!$ds) { die("<h4>Unable to connect to LDAP server</h4>");}
 		$r=ldap_bind($ds);
 		$search = "*";
 		$field = "mail";
-		$sr=ldap_search($ds, "cn=elettra.eu", "$field=$search");
+		// $sr=ldap_search($ds, "cn=elettra.eu", "$field=$search");
+		$sr=ldap_search($ds, "ou=people,dc=elettra,dc=eu", "$field=$search");
 		$info = ldap_get_entries($ds, $sr);
 		$data = array();
 		for ($i=0; $i<$info["count"]; $i++) {
@@ -1401,7 +1405,7 @@
 		$replace['<!--dosimeter_host-->'] = $row['dosimeter_type']=='host'? ' selected': '';
 		$replace['<!--dosimeter_personal_host-->'] = $row['dosimeter_type']=='personal_host'? ' selected': '';
 		$replace['<!--dosimeter_id-->'] = $row['dosimeter_number']>0? $row['dosimeter_number']: '';
-		$replace['<!--dosimeter_value-->'] = $row['dosimeter_value']>0? $row['dosimeter_value']: '';
+		$replace['<!--dosimeter_value-->'] = $row['dosimeter_number']>0? $row['dosimeter_value']: '';
 		$replace['<!--token-->'] = $row['token'];
 		$replace['<div class="bs-callout bs-callout-danger">'] = '<!--';
 		$replace["<button id='multi'"] = '<!--';
@@ -1564,7 +1568,7 @@
 			$replace['<!--badge_id-->'] = $row['badge_number']>0? $row['badge_number']: '';
 			$replace['<!--dosimeter-->'] = strtr($row['dosimeter_type'], array('personal'=>'Personale','host'=>'Ospite','personal_host'=>'Personale + Ospite'));
 			$replace['<!--dosimeter_id-->'] = $row['dosimeter_number']>0? $row['dosimeter_number']: '';
-			$replace['<!--dosimeter_value-->'] = $row['dosimeter_value']>0? "IN: {$row['dosimeter_value']} - OUT: <input type='hidden' name='dosimeter_id' id='dosimeter_id_{$row['token']}' value='{$row['dosimeter_number']}'><input type='text' name='dosimeter_exitvalue' id='dosimeter_exitvalue_{$row['token']}' size='20' required onChange=\"changeElement('dosimeter_exitvalue_{$row['token']}', '#save_{$row['token']}')\">": '';
+			$replace['<!--dosimeter_value-->'] = $row['dosimeter_number']>0? "IN: {$row['dosimeter_value']} - OUT: <input type='hidden' name='dosimeter_id' id='dosimeter_id_{$row['token']}' value='{$row['dosimeter_number']}'><input type='text' name='dosimeter_exitvalue' id='dosimeter_exitvalue_{$row['token']}' size='20' required onChange=\"changeElement('dosimeter_exitvalue_{$row['token']}', '#save_{$row['token']}')\">": ''; 
 			$replace['<!--token-->'] = $row['token'];
 			$items_indoor .= strtr($template[1], $replace);
 		}
@@ -1586,10 +1590,10 @@
 		$replace['<!--note-->'] = $row['note'];
 		$replace['<!--place-->'] = strtr($row['place'], array('psa'=>'PSA','bo'=>'Booster','sa'=>'Service Area','ring'=>'Storage Ring','linac'=>'Linac','uh'=>'Sala Ondulatori','linacuh'=>'Linac + Sala Ond.','kgzc'=>"KG zone controllate"));
 		$replace['<!--badge-->'] = strtr($row['badge_type'], array('personal'=>'Personale','host'=>'Ospite','search'=>'Ronda'));
-		$replace['<!--badge_id-->'] = $row['badge_number']>0? $row['badge_number']: '';
+		$replace['<!--badge_id-->'] = $row['badge_number']>0? $row['badge_number']: ''; 
 		$replace['<!--dosimeter-->'] = strtr($row['dosimeter_type'], array('personal'=>'Personale','host'=>'Ospite','personal_host'=>'Personale + Ospite'));
-		$replace['<!--dosimeter_id-->'] = $row['dosimeter_number']>0? $row['dosimeter_number']: '';
-		$replace['<!--dosimeter_value-->'] = $row['dosimeter_value']>0? "IN: {$row['dosimeter_value']} - OUT: {$row['dosimeter_exitvalue']}": '';
+        $replace['<!--dosimeter_id-->'] = $row['dosimeter_number']>0? $row['dosimeter_number']: ''; 
+		$replace['<!--dosimeter_value-->'] = $row['dosimeter_number']>0? "IN: {$row['dosimeter_value']} - OUT: {$row['dosimeter_exitvalue']}": '';
 		$replace['<!--token-->'] = $row['token'];
 		$items .= strtr($template[3], $replace);
 	}
