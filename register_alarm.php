@@ -44,12 +44,14 @@
 			if (strpos($user_inside, 'elettra')!==false) $pos = explode('elettra', $user_inside);
 			if (strpos($user_inside, 'booster')!==false) $pos = explode('booster', $user_inside);
 			if (strpos($user_inside, 'fermi')!==false) $pos = explode('fermi', $user_inside);
+			if (empty($pos)) $pos = explode(' ', $user_inside);
 			if (isset($pos[1])) $cond = "badge_type='search' AND badge_number=".quote_smart(trim($pos[1], '_.'));
 		}
 		if (strpos($user_inside, 'osp')!==false) {
 			if (strpos($user_inside, 'elettra')!==false) $pos = explode('elettra', $user_inside);
 			if (strpos($user_inside, 'booster')!==false) $pos = explode('booster', $user_inside);
 			if (strpos($user_inside, 'fermi')!==false) $pos = explode('fermi', $user_inside);
+			if (empty($pos)) $pos = explode(' ', $user_inside);
 			if (isset($pos[1])) $cond = "badge_type='host' AND badge_number=".quote_smart(trim($pos[1], '_.'));
 		}
 		if (empty($cond)) {
@@ -57,11 +59,17 @@
 				$cond = "name='$name'";
 			}
 		}
-		if (empty($cond)) {die("NOK");}
+		if (empty($cond)) {
+			$txt = date('Y-m-d H:i:s ')."$user_inside; res: "."NOK.";
+			file_put_contents("/var/www/html/pss/user_inside_$machine.log", $txt.PHP_EOL , FILE_APPEND | LOCK_EX);
+			die("NOK");
+		}
 		$query = "SELECT COUNT(*) AS n FROM access_$machine WHERE ISNULL(exit_time) AND token>0 AND $cond";
 		if (isset($_REQUEST['debug'])) debug($query);
 		$res = mysqli_query($db, $query);
 		$row = mysqli_fetch_array($res, MYSQLI_ASSOC);
+		$txt = date('Y-m-d H:i:s ')."$user_inside; q: $query; res: ".($row['n']=='0'? "NOK": "OK");
+		file_put_contents("/var/www/html/pss/user_inside_$machine.log", $txt.PHP_EOL , FILE_APPEND | LOCK_EX);
 		die($row['n']=='0'? "NOK": "OK"); 
 	}
 
