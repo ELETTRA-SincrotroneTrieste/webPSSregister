@@ -100,7 +100,7 @@ require_once('./pss_conf.php');
 		$startdate = isset($_REQUEST["startdate"])? parse_time($_REQUEST["startdate"]): date("Y-m-d H:i:s", time()-600);
 		$stopdate = isset($_REQUEST["stopdate"])? parse_time($_REQUEST["stopdate"]): "";
 
-		$db = mysql_connect("192.168.205.100", "eacro", "");
+		$db = mysql_connect(HOST, "eacro", "");
 		mysql_select_db("elettraaccesscontrol", $db);
 		$year = substr($startdate, 0, 4);
 		$cmd = array();
@@ -115,7 +115,7 @@ require_once('./pss_conf.php');
 
 
 
-		$db = mysql_connect("192.168.205.100", "BACro", "Bacolo");
+		$db = mysql_connect(HOST, "BACro", "Bacolo");
 		mysql_select_db("BoostAccessCtrl", $db);
 		if (isset($_REQUEST["query"])) {
 			debug($_REQUEST["query"]);
@@ -361,7 +361,7 @@ require_once('./pss_conf.php');
 	// check presence of people in booster
 	function emit_presence_bo() {
 		global $debug, $script, $statquery, $admin;
-		$db = mysql_connect("192.168.205.100", "BACro", "Bacolo");
+		$db = mysql_connect(HOST, "BACro", "Bacolo");
 		mysql_select_db("BoostAccessCtrl", $db);
 		$trusted_time = 'db_time'; // should be plc_time, but substituted by db_time when not satisfactory
 		$startdate = isset($_REQUEST["startdate"])? parse_time($_REQUEST["startdate"]): date("Y-m-d H:i:s", time()-600);
@@ -392,7 +392,7 @@ require_once('./pss_conf.php');
 	// check access to booster
 	function emit_stat_bo_new() {
 		global $debug, $script, $statquery, $admin;
-		$db = mysql_connect("192.168.205.100", "BACro", "Bacolo");
+		$db = mysql_connect(HOST, "BACro", "Bacolo");
 		mysql_select_db("BoostAccessCtrl", $db);
 
 		if (isset($_REQUEST["startdate"]) and ($_REQUEST["startdate"]=='lastday')) {
@@ -481,7 +481,7 @@ require_once('./pss_conf.php');
 	// check presence of people
 	function emit_presence_sr() {
 		global $debug, $script, $statquery, $admin;
-		$db = mysql_connect("192.168.205.100", "eacro", "");
+		$db = mysql_connect(HOST, "eacro", "");
 		mysql_select_db("elettraaccesscontrol", $db);
 
 		$startdate = isset($_REQUEST["startdate"])? parse_time($_REQUEST["startdate"]): date("Y-m-d H:i:s", time()-600);
@@ -537,7 +537,7 @@ require_once('./pss_conf.php');
 	{
 		global $debug, $script, $statquery, $admin;
 
-		$db = mysql_connect("192.168.205.100", "eacro", "");
+		$db = mysql_connect(HOST, "eacro", "");
 		mysql_select_db("elettraaccesscontrol", $db);
 
 		if (isset($_REQUEST["startdate"]) and ($_REQUEST["startdate"]=='lastday')) {
@@ -628,14 +628,14 @@ require_once('./pss_conf.php');
 	// eval filter select
 	function eval_filter() {
 		$filter_select = "<select name='filter_name'>\n<option value=''> </option>\n"; 
-		$db = mysql_connect("192.168.205.100", "eacro", "");
+		$db = mysql_connect(HOST, "eacro", "");
 		mysql_select_db("elettraaccesscontrol", $db);
 		// $res = mysql_query("SELECT byte_number, bit_number, name, comment FROM sr_db51_descr ORDER BY byte_number, bit_number");
 		$res = mysql_query("SELECT byte_number, bit_number, name, comment FROM sr_db51_descr ORDER BY name");
 		while ($r = mysql_fetch_array($res, MYSQL_ASSOC)) {
 			$filter_select .= "<option value='{$r["name"]}'>{$r["name"]} - SR {$r["byte_number"]}.{$r["bit_number"]}</option>\n";
 		}
-		$db = mysql_connect("192.168.205.100", "BACro", "Bacolo");
+		$db = mysql_connect(HOST, "BACro", "Bacolo");
 		mysql_select_db("BoostAccessCtrl", $db);
 		// $res = mysql_query("SELECT byte, name FROM access_desc_string ORDER BY byte");
 		$res = mysql_query("SELECT * FROM state_desc_bit ORDER BY name");
