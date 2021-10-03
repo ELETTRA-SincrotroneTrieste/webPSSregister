@@ -52,8 +52,8 @@
 		  <ul class="nav navbar-nav">
 			<li><a href="http://ecsproxy.elettra.eu/docs/pss/register.php?backoffice=">passa a Elettra</a></li>
 			<!--li class="active"><a href="?">Home</a></li>
-			<li><a href="#top" onClick="$('td:nth-child(7)').show();$('th:nth-child(7)').show();">show descriptions</a></li>
-			<li><a href="#contact">Contatti</a></li-->
+			<!--li><a href="#top" onClick="$('td:nth-child(7)').show();$('th:nth-child(7)').show();">show descriptions</a></li>
+			<!--li><a href="#contact">Contatti</a></li-->
 		  </ul>
 		</div><!--/.nav-collapse -->
 	  </div>
@@ -100,7 +100,7 @@
 	<td><span id='dosimeter_value' style='display:none;'>IN&nbsp;<input type='text' name='dosimeter_value' size='6' value='<!--dosimeter_value-->'><br><br>OUT&nbsp;<input type='text' name='dosimeter_exitvalue' id='dosimeter_exitvalue' size='6' value='<!--dosimeter_exitvalue-->'></span><input type='hidden' id='confirm' name='confirm' value='NO'></td>
 	<td><input type='text' name='stop' size='20' placeholder='YYYY-MM-DD hh:mm' required></td>
 	<td><!--token--></td>
-	<td><input type='submit' name='insert' value='salva'></td>
+	<td><input type='submit' name='insert' value='salva' onClick="return validate_backoffice('elettra');"><input type='hidden' id='confirm' name='confirm' value='NO'></td>
 </form>
 </tr>
 <!--item-->
