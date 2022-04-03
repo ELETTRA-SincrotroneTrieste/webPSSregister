@@ -18,7 +18,7 @@
 
 
 	if (strpos($_SERVER['HTTP_HOST'], 'trieste.it')!==false) {
-		header('Location: http://'.strtr($_SERVER['HTTP_HOST'], array('.trieste.it'=>'.eu')).$_SERVER['REQUEST_URI']);
+		header('Location: https://'.strtr($_SERVER['HTTP_HOST'], array('.trieste.it'=>'.eu')).$_SERVER['REQUEST_URI']);
 		// echo ('Location: '.strtr($_SERVER['HTTP_HOST'], array('.trieste.it'=>'.eu')).$_SERVER['REQUEST_URI']);
 	}
 
@@ -94,6 +94,23 @@
 
 	// open database
 	$sql = open_db();
+
+	$placeArray = array('elettra'=>"
+		<tr><td title='PreInjector Service Area'><input type='checkbox' name='place_psa' id='place_psa' onChange=\"changeElement('place_psa', '#save')\"<!--place_psa-->>&nbsp;<b>PSA</b></td></tr>
+		<tr><td title='Booster'><input type='checkbox' name='place_bo' id='place_bo' onChange=\"changeElement('place_bo', '#save')\"<!--place_bo-->>&nbsp;<b>Booster</b></td></tr>
+		<tr><td title='Storage Ring'><input type='checkbox' name='place_ring' id='place_ring' onChange=\"changeElement('place_ring', '#save')\"<!--place_ring-->>&nbsp;<b>Storage Ring</b></td></tr>
+		<tr><td title='Storage Ring Service Area'><input type='checkbox' name='place_sa' id='place_sa' onChange=\"changeElement('place_sa', '#save')\"<!--place_sa-->>&nbsp;<b>Service Area</b></td></tr>
+	", 'fermi'=>"
+		<tr><td title='Linac'><input type='checkbox' name='place_linac' id='place_linac' onChange=\"changeElement('place_linac', '#save')\">&nbsp;<b>Linac</b></td></tr>
+		<tr><td title='Sala Ondulatori'><input type='checkbox' name='place_uh' id='place_uh' onChange=\"changeElement('place_uh', '#save')\">&nbsp;<b>Sala Ondulatori</b></td></tr>
+		<tr><td title='Klystron Gallery zone controllate'><input type='checkbox' name='place_kgzc' id='place_kgzc' onChange=\"changeElement('place_kgzc', '#save')\">&nbsp;<b>KG zone controllate</b></td></tr>
+	");
+	$bko = isset($_REQUEST['backoffice'])? '?backoffice=': '';
+	$goto = array(
+		'elettra'=>'<a href="http://fcsproxy.elettra.eu/docs/pss/register.php'.$bko.'">passa a FERMI</a>',
+		'fermi'=>'<a href="http://ecsproxy.elettra.eu/docs/pss/register.php'.$bko.'">passa a ELETTRA</a>'
+	);
+	$machineUC = strtoupper($machine);
 
 	$remote_ip = $_SERVER['REMOTE_ADDR']; // echo "$remote_ip<br>\n";
 	// if (isset($_REQUEST['debug'])) {echo "<pre>"; print_r($_SERVER); echo "</pre>";}
@@ -281,7 +298,7 @@
 	<!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
 	<meta name="description" content="">
 	<meta name="author" content="">
-	<link rel="icon" href="http://www.elettra.eu/favicon.png"> 
+	<link rel="icon" href="https://www.elettra.eu/favicon.png"> 
 
 	<title>Statistiche del registro di sala controllo di '.strtoupper($machine).'</title>
 
@@ -613,7 +630,7 @@
 						$color = ' style="background-color: plum"';
 						$butt = "<button onClick=\"window.location = './register.php?backoffice&user={$_REQUEST['user']}&statistics=$year&restorePlc={$line['db50_key']}'\">Ripristina</button>";
 					}
-					if (!empty($_REQUEST['user']) && $fullnameSearched==$fullname) {echo "<tr$color><td><a href='http://fcsproxy.elettra.eu/docs/pss/fermi.php?var=Show&startdate=".date('Y-m-d+H:i:s', $oldLine['db_time']-3701)."&stopdate=".date('Y-m-d H:i:s', $line['db_time']+1)."&plc=all'>$place</a> </td><td> PLC </td><td> ".date('Y-m-d H:i:s', $oldLine['db_time'])." </td><td> ".date('Y-m-d H:i:s', $line['db_time']).
+					if (!empty($_REQUEST['user']) && $fullnameSearched==$fullname) {echo "<tr$color><td><a href='https://fcs-proxy-01.elettra.eu/docs/pss/fermi.php?var=Show&startdate=".date('Y-m-d+H:i:s', $oldLine['db_time']-3701)."&stopdate=".date('Y-m-d H:i:s', $line['db_time']+1)."&plc=all'>$place</a> </td><td> PLC </td><td> ".date('Y-m-d H:i:s', $oldLine['db_time'])." </td><td> ".date('Y-m-d H:i:s', $line['db_time']).
 						" </td><td align='right'> ".round($t)." /1 </td><td align='right'> $dose/$place_count </td><td align='right'>".round($sortedUser[$fullname]['linac']['t'])."</td><td align='right'>".round($sortedUser[$fullname]['undulator']['t'])."</td><td align='right'>".round($sortedUser[$fullname]['kgzc']['t'])."</td><td>$butt</td></tr>\n";}
 					if (isset($_REQUEST['debugSort']) && $fullname == '{sconosciuto}') {debug($line);debug($t);debug($dose);}
 					if (isset($_REQUEST['check_user']) && $fullname==$_REQUEST['check_user']) echo "t: $t (".date('Y-m-d H:i:s',$line['db_time'])."-{$oldLine['db_time']}), dose: $dose, place: $place ({$registerdata[0]['place']}), place_count: $place_count<br>\n";
@@ -827,8 +844,8 @@
 	// ----------------------------------------------------------------
 	// update using backoffice
 	function update_backoffice() {
-		global $sql, $machine, $dbtype, $place;
-		$template = explode('<!--item-->', file_get_contents("register_backoffice_$machine.html"));
+		global $sql, $machine, $dbtype, $place, $goto;
+		$template = explode('<!--item-->', strtr(file_get_contents("register_backoffice.html"),array('<!--machine-->'=>$machine, '<!--machineUC-->'=>$machineUC, '<!--places-->'=>$placeArray[$machine], '<!--goto-->'=>$goto[$machine])));
 		$data = $sql->sql_select("*", "access_$machine", "id=".quote_smart($_REQUEST['id']));
 		if (!$data) {sql_debug("*", "access_$machine", "id=".quote_smart($_REQUEST['id'])); echo ";<br>\n".$sql->sql_error(); exit();}
 		$d = $data[0];
@@ -935,7 +952,7 @@
 			<a href='?backoffice&anomalies&year=$year'>anomalie</a>&nbsp;&nbsp;&nbsp;
 			<a href='?backoffice&database&year=$year'>storico operazioni</a></td></tr></table></form><br>";
 			$err_msg = (isset($_REQUEST['show_details']) || (isset($_REQUEST['anomalies']) && !isset($_REQUEST['user']) && !isset($_REQUEST['dosimeter'])))? show_anomalies(date('z')+1): '';
-			$template = explode('<!--item-->', file_get_contents("register_backoffice_$machine.html"));
+			$template = explode('<!--item-->', strtr(file_get_contents("register_backoffice.html"),array('<!--machine-->'=>$machine, '<!--machineUC-->'=>$machineUC, '<!--note-->'=>$note, '<!--places-->'=>$placeArray[$machine], '<!--goto-->'=>$goto[$machine])));
 			$cond = '1=1';
 			$prevyy = $year > 2012? "<a href='./register.php?backoffice&year=".($year-1)."'>&lt;</a> ": '';
 			$nextyy = $year < date('Y')? " <a href='./register.php?backoffice&year=".($year+1)."'>&gt;</a>": '';
@@ -1245,7 +1262,7 @@
 	<!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
 	<meta name="description" content="">
 	<meta name="author" content="">
-	<link rel="icon" href="http://www.elettra.eu/favicon.png"> 
+	<link rel="icon" href="https://www.elettra.eu/favicon.png"> 
 	<title>PSS register</title>
 	<!-- Bootstrap CSS -->
 	<link href="./lib/bootstrap/css/bootstrap.min.css" rel="stylesheet">	
@@ -1382,7 +1399,7 @@
 		exit();
 	}
 	if (isset($_REQUEST['edit'])) {
-		$template = explode('<!--item-->', file_get_contents("register_$machine.html"));
+		$template = explode('<!--item-->', strtr(file_get_contents("register.html"),array('<!--machine-->'=>$machine, '<!--machineUC-->'=>$machineUC, '<!--note-->'=>$note, '<!--places-->'=>$placeArray[$machine], '<!--goto-->'=>$goto[$machine])));
 		$data = $sql->sql_select("*", "access_$machine", "token=".quote_smart($_REQUEST['edit']));
 		$row = $data[0];
 		if (!empty($row['signed_by'])) {
@@ -1535,7 +1552,8 @@
 
 	if (isset($_REQUEST['multi_input'])) {
 		findUsers();
-		$template = explode('<!--item-->', file_get_contents("register_{$machine}_multi.html"));
+		$multi = strtr(file_get_contents("register_multi.html"), array('<!--machine-->'=>$machine, '<!--machineUC-->'=>$machineUC, '<!--places-->'=>$placeArray[$machine])); 
+		$template = explode('<!--item-->', $multi);
 		echo $template[0].$jsSearch;
 		for ($i=0; $i<$multi_number; $i++) {
 			echo strtr($template[1], array('<!--id-->'=>$i,'<!--name-->'=>'','<!--badge_personal-->'=>'','<!--badge_host-->'=>'','<!--badge_search-->'=>'','<!--badge_id-->'=>'','<!--dosimeter_personal-->'=>'','<!--dosimeter_host-->'=>'','<!--dosimeter_personal_host-->'=>'','<!--dosimeter_id-->'=>'','<!--dosimeter_value-->'=>''));
@@ -1544,8 +1562,8 @@
 	}
 
 	if (isset($_REQUEST['msg'])) echo "<pre>{$_REQUEST['msg']}</pre>\n";
-
-	$template = explode('<!--item-->', file_get_contents("register_$machine.html"));
+	$note = $machine=='elettra'? '<br><br><button class="btn btn-lg btn-primary" onClick="pson()">PS Elettra ON</button>': '';
+	$template = explode('<!--item-->', strtr(file_get_contents("register.html"),array('<!--machine-->'=>$machine, '<!--machineUC-->'=>$machineUC, '<!--note-->'=>$note, '<!--places-->'=>$placeArray[$machine], '<!--goto-->'=>$goto[$machine])));
 	$anomalies = (isset($_REQUEST['show_details']) || isset($_REQUEST['backoffice']))? show_anomalies(): "<a href='?show_details'>maggiori dettagli</a> (anomalie e storico)<br>";
 	$items_outdoor = strtr($template[0], array('<!--start-->'=>'','<!--name-->'=>'','<!--note-->'=>'','<!--anomalies-->'=>$anomalies,'<!--operators-->'=>findOperators(),
 											'<!--place_psa-->'=>'','<!--place_bo-->'=>'','<!--place_sa-->'=>'','<!--place_ring-->'=>'','<!--place_linac-->'=>'','<!--place_uh-->'=>'','<!--place_linacuh-->'=>'','<!--place_kgzc-->'=>'',
